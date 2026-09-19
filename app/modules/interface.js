@@ -1,7 +1,7 @@
 const { shell, app, Tray, Menu, powerMonitor, nativeTheme, nativeImage } = require( 'electron' )
 const { enable_battery_limiter, disable_battery_limiter, initialize_battery, is_limiter_enabled, get_battery_status, uninstall_battery } = require( './battery' )
 const { log } = require( "./helpers" )
-const { get_logo_template } = require( './theme' )
+const { get_logo_template, get_indicator_logo } = require( './theme' )
 const { get_force_discharge_setting, update_force_discharge_setting, get_notifications_setting, toggle_notifications_setting, get_icon_style_setting, toggle_icon_style_setting, get_indicator_symbol_setting, set_indicator_symbol_setting } = require( './settings' )
 
 /* ///////////////////////////////
@@ -32,14 +32,15 @@ const generate_app_menu = async () => {
         // Check indicator symbol setting
         const current_symbol = get_indicator_symbol_setting()
 
-        // Set tray icon / title
+        // Set tray icon and title
         log( `Generate app menu percentage: ${ percentage } (style: ${ icon_style }, symbol: ${ current_symbol }, discharge ${ allow_discharge ? 'allowed' : 'disallowed' }, limited ${ limiter_on ? 'on' : 'off' })` )
+        const indicator_icon = get_indicator_logo( current_symbol )
+        tray.setImage( indicator_icon )
+
         if( icon_style === 'text' ) {
-            tray.setImage( nativeImage.createEmpty() )
-            tray.setTitle( ` ${ percentage }% ${ limiter_on ? current_symbol : '' }`.trim() )
+            tray.setTitle( ` ${ percentage }%` )
         } else {
             tray.setTitle( '' )
-            tray.setImage( get_logo_template( percentage, limiter_on ) )
         }
 
         // Build menu
@@ -75,7 +76,7 @@ const generate_app_menu = async () => {
                 label: `Advanced settings`,
                 submenu: [
                     {
-                        label: `Modern text display (${ percentage }% ${ current_symbol })`,
+                        label: `Show percentage (${ percentage }%)`,
                         type: 'checkbox',
                         checked: icon_style === 'text',
                         click: async () => {
@@ -84,41 +85,50 @@ const generate_app_menu = async () => {
                         }
                     },
                     {
-                        label: `Indicator Symbol (${ current_symbol })`,
+                        label: `Indicator Icon`,
                         submenu: [
                             {
-                                label: `⚡ Lightning (e.g. ${ percentage }% ⚡)`,
+                                label: `⚡ Lightning Bolt`,
                                 type: 'radio',
-                                checked: current_symbol === '⚡',
+                                checked: current_symbol === 'bolt',
                                 click: async () => {
-                                    set_indicator_symbol_setting( '⚡' )
+                                    set_indicator_symbol_setting( 'bolt' )
                                     await refresh_tray()
                                 }
                             },
                             {
-                                label: `🛡️ Shield (e.g. ${ percentage }% 🛡️)`,
+                                label: `🛡️ Protection Shield`,
                                 type: 'radio',
-                                checked: current_symbol === '🛡️',
+                                checked: current_symbol === 'shield',
                                 click: async () => {
-                                    set_indicator_symbol_setting( '🛡️' )
+                                    set_indicator_symbol_setting( 'shield' )
                                     await refresh_tray()
                                 }
                             },
                             {
-                                label: `🔌 Plug (e.g. ${ percentage }% 🔌)`,
+                                label: `🔌 AC Power Plug`,
                                 type: 'radio',
-                                checked: current_symbol === '🔌',
+                                checked: current_symbol === 'plug',
                                 click: async () => {
-                                    set_indicator_symbol_setting( '🔌' )
+                                    set_indicator_symbol_setting( 'plug' )
                                     await refresh_tray()
                                 }
                             },
                             {
-                                label: `● Minimal Dot (e.g. ${ percentage }% ●)`,
+                                label: `🔋 Minimalist Battery`,
                                 type: 'radio',
-                                checked: current_symbol === '●',
+                                checked: current_symbol === 'battery',
                                 click: async () => {
-                                    set_indicator_symbol_setting( '●' )
+                                    set_indicator_symbol_setting( 'battery' )
+                                    await refresh_tray()
+                                }
+                            },
+                            {
+                                label: `● Minimal Dot`,
+                                type: 'radio',
+                                checked: current_symbol === 'dot',
+                                click: async () => {
+                                    set_indicator_symbol_setting( 'dot' )
                                     await refresh_tray()
                                 }
                             }
@@ -240,14 +250,12 @@ const refresh_logo = async ( percent=80, force ) => {
     log( `Refresh logo for percentage ${ percent }, force ${ force }` )
     const icon_style = get_icon_style_setting()
     const current_symbol = get_indicator_symbol_setting()
-    const is_enabled = force === 'active' ? true : force === 'inactive' ? false : await is_limiter_enabled()
 
+    tray.setImage( get_indicator_logo( current_symbol ) )
     if( icon_style === 'text' ) {
-        tray.setImage( nativeImage.createEmpty() )
-        return tray.setTitle( ` ${ percent }% ${ is_enabled ? current_symbol : '' }`.trim() )
+        return tray.setTitle( ` ${ percent }%` )
     }
-    tray.setTitle( '' )
-    return tray.setImage( get_logo_template( percent, is_enabled ) )
+    return tray.setTitle( '' )
 }
 
 
@@ -257,7 +265,8 @@ const refresh_logo = async ( percent=80, force ) => {
 async function set_initial_interface() {
 
     log('\n===\n=== Starting tray app\n===\n')
-    tray = new Tray( get_logo_template( 100, true ) )
+    const current_symbol = get_indicator_symbol_setting()
+    tray = new Tray( get_indicator_logo( current_symbol ) )
 
     // Set "loading" context
     tray.setTitle( '  updating...' )

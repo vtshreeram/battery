@@ -104,17 +104,22 @@ const toggle_icon_style_setting = () => {
 }
 
 const indicator_symbol_path = path.join( os.homedir(), '.battery', 'indicator_symbol.setting' )
+const valid_symbols = ['bolt', 'shield', 'plug', 'battery', 'dot']
 
 const get_indicator_symbol_setting = () => {
     try {
         if( fs.existsSync( indicator_symbol_path ) ) {
             const val = fs.readFileSync( indicator_symbol_path, 'utf8' ).trim()
-            if( ['⚡', '🛡️', '🔌', '●'].includes( val ) ) return val
+            if( valid_symbols.includes( val ) ) return val
+            if( val === '⚡' ) return 'bolt'
+            if( val === '🛡️' ) return 'shield'
+            if( val === '🔌' ) return 'plug'
+            if( val === '●' ) return 'dot'
         }
     } catch( e ) {
         log( `Error reading indicator symbol setting: `, e )
     }
-    return '⚡'
+    return 'bolt'
 }
 
 const set_indicator_symbol_setting = ( symbol ) => {

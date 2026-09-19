@@ -46,6 +46,18 @@ ipcMain.handle( 'dark-mode:system', () => {
     nativeTheme.themeSource = 'system'
 } )
 
+const get_indicator_logo = ( style = 'bolt' ) => {
+    const filename = `indicator-${ style }-Template.png`
+    const image_path = path.join( asset_path, filename )
+    if( existsSync( image_path ) ) {
+        log( `Found indicator image: ${ image_path }` )
+        return nativeImage.createFromPath( image_path )
+    }
+    log( `Indicator image missing: ${ image_path }, falling back to logo` )
+    return get_logo_template( 80, true )
+}
+
 module.exports = {
-    get_logo_template
+    get_logo_template,
+    get_indicator_logo
 }
