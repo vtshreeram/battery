@@ -1,8 +1,8 @@
 const { shell, app, Tray, Menu, powerMonitor, nativeTheme, nativeImage } = require( 'electron' )
 const { enable_battery_limiter, disable_battery_limiter, initialize_battery, is_limiter_enabled, get_battery_status, uninstall_battery } = require( './battery' )
 const { log } = require( "./helpers" )
-const { get_logo_template, get_indicator_logo } = require( './theme' )
-const { get_force_discharge_setting, update_force_discharge_setting, get_notifications_setting, toggle_notifications_setting, get_icon_style_setting, toggle_icon_style_setting, get_indicator_symbol_setting, set_indicator_symbol_setting } = require( './settings' )
+const { get_logo_template, get_status_icon } = require( './theme' )
+const { get_force_discharge_setting, update_force_discharge_setting, get_notifications_setting, toggle_notifications_setting, get_icon_style_setting, toggle_icon_style_setting } = require( './settings' )
 
 /* ///////////////////////////////
 // Menu helpers
@@ -15,7 +15,7 @@ const generate_app_menu = async () => {
 
     try {
         // Get battery and daemon status
-        const { battery_state, daemon_state, maintain_percentage=80, percentage } = await get_battery_status()
+        const { battery_state, daemon_state, maintain_percentage=80, percentage, discharging } = await get_battery_status()
 
         // Check if limiter is on
         const limiter_on = await is_limiter_enabled()
@@ -29,13 +29,13 @@ const generate_app_menu = async () => {
         // Check icon display style setting
         const icon_style = get_icon_style_setting()
 
-        // Check indicator symbol setting
-        const current_symbol = get_indicator_symbol_setting()
+        // Determine if running on battery or charging/connected
+        const is_on_battery = powerMonitor.onBatteryPower || discharging
+        const is_charging = !is_on_battery
 
         // Set tray icon and title
-        log( `Generate app menu percentage: ${ percentage } (style: ${ icon_style }, symbol: ${ current_symbol }, discharge ${ allow_discharge ? 'allowed' : 'disallowed' }, limited ${ limiter_on ? 'on' : 'off' })` )
-        const indicator_icon = get_indicator_logo( current_symbol )
-        tray.setImage( indicator_icon )
+        log( `Generate app menu percentage: ${ percentage } (style: ${ icon_style }, is_charging: ${ is_charging }, discharge ${ allow_discharge ? 'allowed' : 'disallowed' }, limited ${ limiter_on ? 'on' : 'off' })` )
+        tray.setImage( get_status_icon( is_charging ) )
 
         if( icon_style === 'text' ) {
             tray.setTitle( ` ${ percentage }%` )
@@ -83,56 +83,6 @@ const generate_app_menu = async () => {
                             toggle_icon_style_setting()
                             await refresh_tray()
                         }
-                    },
-                    {
-                        label: `Indicator Icon`,
-                        submenu: [
-                            {
-                                label: `⚡ Lightning Bolt`,
-                                type: 'radio',
-                                checked: current_symbol === 'bolt',
-                                click: async () => {
-                                    set_indicator_symbol_setting( 'bolt' )
-                                    await refresh_tray()
-                                }
-                            },
-                            {
-                                label: `🛡️ Protection Shield`,
-                                type: 'radio',
-                                checked: current_symbol === 'shield',
-                                click: async () => {
-                                    set_indicator_symbol_setting( 'shield' )
-                                    await refresh_tray()
-                                }
-                            },
-                            {
-                                label: `🔌 AC Power Plug`,
-                                type: 'radio',
-                                checked: current_symbol === 'plug',
-                                click: async () => {
-                                    set_indicator_symbol_setting( 'plug' )
-                                    await refresh_tray()
-                                }
-                            },
-                            {
-                                label: `🔋 Minimalist Battery`,
-                                type: 'radio',
-                                checked: current_symbol === 'battery',
-                                click: async () => {
-                                    set_indicator_symbol_setting( 'battery' )
-                                    await refresh_tray()
-                                }
-                            },
-                            {
-                                label: `● Minimal Dot`,
-                                type: 'radio',
-                                checked: current_symbol === 'dot',
-                                click: async () => {
-                                    set_indicator_symbol_setting( 'dot' )
-                                    await refresh_tray()
-                                }
-                            }
-                        ]
                     },
                     {
                         label: `Desktop notifications`,
@@ -249,9 +199,9 @@ const refresh_logo = async ( percent=80, force ) => {
 
     log( `Refresh logo for percentage ${ percent }, force ${ force }` )
     const icon_style = get_icon_style_setting()
-    const current_symbol = get_indicator_symbol_setting()
+    const is_charging = !powerMonitor.onBatteryPower
 
-    tray.setImage( get_indicator_logo( current_symbol ) )
+    tray.setImage( get_status_icon( is_charging ) )
     if( icon_style === 'text' ) {
         return tray.setTitle( ` ${ percent }%` )
     }
@@ -265,8 +215,8 @@ const refresh_logo = async ( percent=80, force ) => {
 async function set_initial_interface() {
 
     log('\n===\n=== Starting tray app\n===\n')
-    const current_symbol = get_indicator_symbol_setting()
-    tray = new Tray( get_indicator_logo( current_symbol ) )
+    const is_charging = !powerMonitor.onBatteryPower
+    tray = new Tray( get_status_icon( is_charging ) )
 
     // Set "loading" context
     tray.setTitle( '  updating...' )
@@ -288,6 +238,16 @@ async function set_initial_interface() {
     tray.on( 'mouse-enter', () => refresh_tray() )
     tray.on( 'click', () => refresh_tray() )
     nativeTheme.on( 'updated', () => refresh_tray() )
+
+    // Power change listeners (instant update when plugged / unplugged)
+    powerMonitor.on( 'on-ac', () => {
+        log( 'Power source changed: AC plugged in' )
+        refresh_tray()
+    } )
+    powerMonitor.on( 'on-battery', () => {
+        log( 'Power source changed: running on battery' )
+        refresh_tray()
+    } )
 
     // Set refresh timer for the battery icon
     set_interface_update_timer()
