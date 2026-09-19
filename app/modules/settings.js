@@ -41,8 +41,43 @@ const update_force_discharge_setting = async () => {
 
 }
 
+const fs = require( 'fs' )
+const path = require( 'path' )
+const os = require( 'os' )
+
+const notify_setting_path = path.join( os.homedir(), '.battery', 'notify.setting' )
+
+const get_notifications_setting = () => {
+    try {
+        if( fs.existsSync( notify_setting_path ) ) {
+            const val = fs.readFileSync( notify_setting_path, 'utf8' ).trim()
+            return val !== 'off'
+        }
+    } catch( e ) {
+        log( `Error reading notifications setting: `, e )
+    }
+    return true
+}
+
+const toggle_notifications_setting = () => {
+    try {
+        const currently_enabled = get_notifications_setting()
+        const new_val = currently_enabled ? 'off' : 'on'
+        const dir = path.dirname( notify_setting_path )
+        if( !fs.existsSync( dir ) ) fs.mkdirSync( dir, { recursive: true } )
+        fs.writeFileSync( notify_setting_path, new_val )
+        log( `Setting notifications to: ${ new_val }` )
+        return !currently_enabled
+    } catch( e ) {
+        log( `Error updating notifications setting: `, e )
+        return get_notifications_setting()
+    }
+}
+
 module.exports = {
     get_force_discharge_setting,
     toggle_force_discharge,
-    update_force_discharge_setting
+    update_force_discharge_setting,
+    get_notifications_setting,
+    toggle_notifications_setting
 }

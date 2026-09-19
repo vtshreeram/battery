@@ -2,7 +2,7 @@ const { shell, app, Tray, Menu, powerMonitor, nativeTheme } = require( 'electron
 const { enable_battery_limiter, disable_battery_limiter, initialize_battery, is_limiter_enabled, get_battery_status, uninstall_battery } = require( './battery' )
 const { log } = require( "./helpers" )
 const { get_logo_template } = require( './theme' )
-const { get_force_discharge_setting, update_force_discharge_setting } = require( './settings' )
+const { get_force_discharge_setting, update_force_discharge_setting, get_notifications_setting, toggle_notifications_setting } = require( './settings' )
 
 /* ///////////////////////////////
 // Menu helpers
@@ -22,6 +22,9 @@ const generate_app_menu = async () => {
 
         // Check force discharge setting
         const allow_discharge = get_force_discharge_setting()
+
+        // Check notifications setting
+        const notifications_on = get_notifications_setting()
 
         // Set tray icon
         log( `Generate app menu percentage: ${ percentage } (discharge ${ allow_discharge ? 'allowed' : 'disallowed' }, limited ${ limiter_on ? 'on' : 'off' })` )
@@ -59,6 +62,15 @@ const generate_app_menu = async () => {
             {
                 label: `Advanced settings`,
                 submenu: [
+                    {
+                        label: `Desktop notifications`,
+                        type: 'checkbox',
+                        checked: notifications_on,
+                        click: async () => {
+                            toggle_notifications_setting()
+                            await refresh_tray()
+                        }
+                    },
                     {
                         label: `Allow force-discharging`,
                         type: 'checkbox',
