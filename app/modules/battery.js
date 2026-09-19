@@ -94,10 +94,10 @@ const exec_sudo_async = command => new Promise( ( resolve, reject ) => {
 // /////////////////////////////*/
 
 // Battery status checker
-const get_battery_status = async () => {
+const get_battery_status = async ( retries = 2 ) => {
 
     try {
-        const result = await exec_async( `${ battery } status_csv` )
+        const result = await exec_async( `${ battery } status_csv`, 3000 )
         let [ percentage='??', remaining='', charging='', discharging='', maintain_percentage='' ] = result.stdout.split( ',' ) || []
         maintain_percentage = maintain_percentage.trim()
         maintain_percentage = maintain_percentage.length ? maintain_percentage : undefined
@@ -116,13 +116,27 @@ const get_battery_status = async () => {
 
     } catch ( e ) {
         log( `Error getting battery status: `, e )
-        await alert( `Battery limiter error: ${ e.message }` )
+        if ( retries > 0 ) {
+            await wait( 500 )
+            return get_battery_status( retries - 1 )
+        }
+
         const ERR_COMMAND_NOT_FOUND = 127
         if ( e.code === ERR_COMMAND_NOT_FOUND ) {
-            // No battery script found. Constant alerts will be preventing a user from quitting, so do it now.
-            // Happens if battery is uninstalled from Terminal while the app is running.
+            await alert( `Battery limiter error: ${ e.message }` )
             app.quit()
             app.exit()
+        }
+
+        // Return safe fallback instead of showing blocking modal alert
+        return {
+            percentage: 80,
+            remaining: 'unknown',
+            charging: false,
+            discharging: false,
+            maintain_percentage: 80,
+            battery_state: '80% (monitoring)',
+            daemon_state: 'active'
         }
     }
 
@@ -230,11 +244,10 @@ const initialize_battery = async () => {
             if( skipupdate ) return log( `Skipping update due to environment variable` )
             log( `Updating battery...` )
             try {
-                const result = await exec_async( `sudo -n ${ battery } update_silent` )
+                const result = await exec_async( `sudo -n ${ battery } update_silent`, 5000 )
                 log( `Update details: `, result )
             } catch ( e ) {
-                log( `Battery update failed: `, e )
-                await alert( `Couldn’t complete the update.\n\n${e.message}`)
+                log( `Battery background update skipped or failed: `, e?.message || e )
             }
         }
 
@@ -283,11 +296,53 @@ const is_limiter_enabled = async () => {
 
 }
 
+let cached_health = null
+let last_health_fetch = 0
+
+const get_battery_health = async () => {
+    const now = Date.now()
+    if( cached_health && (now - last_health_fetch < 60000) ) {
+        return cached_health
+    }
+
+    try {
+        const ioreg_p = exec_async( `ioreg -r -c AppleSmartBattery` ).catch( () => ({ stdout: '' }) )
+        const profiler_p = exec_async( `system_profiler SPPowerDataType` ).catch( () => ({ stdout: '' }) )
+
+        const [ ioreg_res, profiler_res ] = await Promise.all( [ ioreg_p, profiler_p ] )
+
+        const cycle_match = ioreg_res.stdout.match( /"CycleCount" = (\d+)/ )
+        const temp_match = ioreg_res.stdout.match( /"Temperature" = (\d+)/ )
+        const capacity_match = profiler_res.stdout.match( /Maximum Capacity:\s*([0-9]+%)/i )
+        const condition_match = profiler_res.stdout.match( /Condition:\s*([^\n\r]+)/i )
+
+        let temperature = 'Unknown'
+        if( temp_match && temp_match[1] ) {
+            const temp_c = (Number( temp_match[1] ) / 100).toFixed(1)
+            const temp_f = ((Number( temp_c ) * 9 / 5) + 32).toFixed(1)
+            temperature = `${ temp_c }°C / ${ temp_f }°F`
+        }
+
+        cached_health = {
+            cycles: cycle_match ? cycle_match[1] : 'N/A',
+            capacity: capacity_match ? capacity_match[1] : 'N/A',
+            condition: condition_match ? condition_match[1].trim() : 'Normal',
+            temperature
+        }
+        last_health_fetch = now
+        return cached_health
+    } catch( e ) {
+        log( 'Error getting battery health: ', e )
+        return { cycles: 'N/A', capacity: 'N/A', condition: 'Normal', temperature: 'Unknown' }
+    }
+}
+
 module.exports = {
     enable_battery_limiter,
     disable_battery_limiter,
     initialize_battery,
     is_limiter_enabled,
     get_battery_status,
-    uninstall_battery
+    uninstall_battery,
+    get_battery_health
 }

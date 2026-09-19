@@ -13,6 +13,11 @@ exports.default = async function notarizing( context ) {
     const { APPLEID, APPLEIDPASS, TEAMID } = process.env
     const appName = context.packager.appInfo.productFilename
 
+    if( !APPLEID || !APPLEIDPASS ) {
+        log( 'Skipping notarization: APPLEID or APPLEIDPASS not configured.' )
+        return
+    }
+
     return await notarize( {
         appBundleId: 'co.palokaj.battery',
         tool: "notarytool",

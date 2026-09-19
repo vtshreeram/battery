@@ -24,6 +24,7 @@ pidfile=$configfolder/battery.pid
 logfile=$configfolder/battery.log
 maintain_percentage_tracker_file=$configfolder/maintain.percentage
 maintain_voltage_tracker_file=$configfolder/maintain.voltage
+notify_setting_file=$configfolder/notify.setting
 daemon_path=$HOME/Library/LaunchAgents/battery.plist
 calibrate_pidfile=$configfolder/calibrate.pid
 path_configfile=/etc/paths.d/50-battery
@@ -50,7 +51,7 @@ smc_binary="$binfolder/smc"
 # Temporarily set to your username and branch to test update functionality with your fork.
 # Security note: Do NOT allow github_user or github_branch to be injected via environment
 #                variables or any other means. Keep them hardcoded.
-github_user="actuallymentor"
+github_user="vtshreeram"
 github_branch="main"
 github_url_setup_sh="https://raw.githubusercontent.com/${github_user}/battery/${github_branch}/setup.sh"
 github_url_update_sh="https://raw.githubusercontent.com/${github_user}/battery/${github_branch}/update.sh"
@@ -120,6 +121,14 @@ Usage:
     block adapter power until the battery reaches the specified level; battery maintenance is restored upon completion
     eg: battery discharge 90
 
+  battery notify SETTING[on/off/status/test]
+    manage macOS desktop notifications for bypass mode and low battery warnings
+    eg: battery notify on
+    eg: battery notify test
+
+  battery health
+    display detailed battery diagnostics, cycle count, temperature, and health
+
   battery update
     update the battery utility to the latest version
 
@@ -173,6 +182,29 @@ subsetting=$3
 
 function log() {
 	echo -e "$(date +%D-%T) [$$]: $*"
+}
+
+function notifications_enabled() {
+	if test -f "$notify_setting_file"; then
+		local setting
+		setting=$(cat "$notify_setting_file" 2>/dev/null | tr -d '[:space:]')
+		if [[ "$setting" == "off" ]]; then
+			return 1
+		fi
+	fi
+	return 0
+}
+
+function send_notification() {
+	local title="$1"
+	local message="$2"
+	local sound="${3:-default}"
+
+	if ! notifications_enabled; then
+		return 0
+	fi
+
+	osascript -e "display notification \"$message\" with title \"$title\" sound name \"$sound\"" >/dev/null 2>&1 &
 }
 
 function valid_percentage() {
@@ -945,6 +977,10 @@ if [[ "$action" == "maintain_synchronous" ]]; then
 		log "Charging to and maintaining at $setting% from $battery_percentage%"
 	fi
 
+	notified_target_reached=false
+	notified_low_20=false
+	notified_crit_10=false
+
 	# Loop until battery percent is exceeded
 	while true; do
 
@@ -960,12 +996,35 @@ if [[ "$action" == "maintain_synchronous" ]]; then
 			fi
 			change_magsafe_led_color "green"
 
+			if [[ "$notified_target_reached" != true ]]; then
+				send_notification "🔋 Battery Maintenance" "Target $upper_bound% reached. Switched to AC Adapter bypass (0 cycles)." "default"
+				notified_target_reached=true
+			fi
+
 		elif [[ "$battery_percentage" -lt "$lower_bound" && "$is_charging" == "disabled" ]]; then
 
 			log "Charge below $lower_bound%"
 			enable_charging
 			change_magsafe_led_color "orange"
+			notified_target_reached=false
 
+		fi
+
+		# Check low battery warnings when running on battery
+		if [[ "$ac_attached" != "1" ]]; then
+			notified_target_reached=false
+			if [[ "$battery_percentage" -le 10 && "$notified_crit_10" != true ]]; then
+				send_notification "🚨 Critical Battery ($battery_percentage%)" "Battery is below 10%! Plug in charger immediately." "Basso"
+				notified_crit_10=true
+				notified_low_20=true
+			elif [[ "$battery_percentage" -le 20 && "$notified_low_20" != true ]]; then
+				send_notification "🪫 Low Battery ($battery_percentage%)" "Connect charger to preserve battery longevity and avoid deep discharge." "Sosumi"
+				notified_low_20=true
+			fi
+		else
+			# Reset low battery notification states when plugged into AC
+			notified_low_20=false
+			notified_crit_10=false
 		fi
 
 		sleep 60
@@ -1201,6 +1260,102 @@ fi
 if [[ "$action" == "status_csv" ]]; then
 
 	echo "$(get_battery_percentage),$(get_remaining_time),$(get_smc_charging_status),$(get_smc_discharging_status),$(get_maintain_percentage)"
+
+fi
+
+# Health & diagnostics
+if [[ "$action" == "health" ]]; then
+
+	battery_ioreg=$(ioreg -r -c AppleSmartBattery 2>/dev/null)
+
+	cycle_count=$(echo "$battery_ioreg" | grep '"CycleCount" =' | head -n1 | awk '{print $3}')
+	raw_temp=$(echo "$battery_ioreg" | grep '"Temperature" =' | head -n1 | awk '{print $3}')
+	if [[ -n "$raw_temp" && "$raw_temp" =~ ^[0-9]+$ ]]; then
+		temp_c=$(echo "scale=1; $raw_temp / 100" | bc -l)
+		temp_f=$(echo "scale=1; ($temp_c * 9/5) + 32" | bc -l)
+		temp_display="${temp_c}°C / ${temp_f}°F"
+	else
+		temp_display="Unknown"
+	fi
+
+	max_capacity=$(system_profiler SPPowerDataType 2>/dev/null | awk -F': ' '/Maximum Capacity/ {print $2}' | head -n1 | xargs)
+	condition=$(system_profiler SPPowerDataType 2>/dev/null | awk -F': ' '/Condition/ {print $2}' | head -n1 | xargs)
+	[[ -z "$condition" ]] && condition="Normal"
+	[[ -z "$max_capacity" ]] && max_capacity="N/A"
+
+	power_source=$(pmset -g batt 2>/dev/null | head -n1 | awk -F"'" '{print $2}')
+	[[ -z "$power_source" ]] && power_source="Unknown"
+
+	curr_percent=$(get_battery_percentage)
+	curr_voltage=$(get_voltage)
+	smc_charging=$(get_smc_charging_status)
+
+	maintain_level="None"
+	if test -f "$pidfile"; then
+		maintain_percentage=$(cat $maintain_percentage_tracker_file 2>/dev/null)
+		if [[ -n "$maintain_percentage" ]]; then
+			maintain_level="$maintain_percentage%"
+		fi
+	fi
+
+	if notifications_enabled; then
+		notify_status="Enabled"
+	else
+		notify_status="Disabled"
+	fi
+
+	echo ""
+	echo "  🔋 Battery Health & Diagnostic Report"
+	echo "  ======================================"
+	echo "  • Maximum Capacity : $max_capacity"
+	echo "  • Cycle Count      : $cycle_count cycles"
+	echo "  • Hardware Health  : $condition"
+	echo "  • Temperature      : $temp_display"
+	echo "  • Current Charge   : $curr_percent% (${curr_voltage}V)"
+	echo "  • Power Source     : $power_source"
+	echo "  • SMC Charging     : $smc_charging"
+	echo "  • Active Maintain  : $maintain_level"
+	echo "  • Notifications    : $notify_status"
+	echo ""
+	exit 0
+
+fi
+
+# Notifications manager
+if [[ "$action" == "notify" ]]; then
+
+	case "$setting" in
+		on|enable)
+			echo "on" > "$notify_setting_file"
+			log "Notifications enabled"
+			send_notification "🔋 Battery CLI" "Notifications are now active." "default"
+			echo "✅ Battery notifications enabled."
+			exit 0
+			;;
+		off|disable)
+			echo "off" > "$notify_setting_file"
+			log "Notifications disabled"
+			echo "🚫 Battery notifications disabled."
+			exit 0
+			;;
+		test)
+			send_notification "🔋 Battery CLI" "Test notification: AC Bypass active at 80% (0 cycles)" "default"
+			echo "🔔 Sent test notification to macOS Notification Center."
+			exit 0
+			;;
+		status|"")
+			if notifications_enabled; then
+				echo "🔔 Battery notifications: ENABLED"
+			else
+				echo "🔕 Battery notifications: DISABLED"
+			fi
+			exit 0
+			;;
+		*)
+			echo "Usage: battery notify [on|off|status|test]"
+			exit 1
+			;;
+	esac
 
 fi
 

@@ -46,6 +46,30 @@ ipcMain.handle( 'dark-mode:system', () => {
     nativeTheme.themeSource = 'system'
 } )
 
+const get_status_icon = ( state = 'charging' ) => {
+    let filename
+    if( state === 'protected' ) {
+        filename = 'status-protected-Template.png'
+    } else if( state === 'charging' || state === true ) {
+        filename = 'status-charging-Template.png'
+    } else {
+        filename = 'status-battery-Template.png'
+    }
+
+    const image_path = path.join( asset_path, filename )
+    if( existsSync( image_path ) ) {
+        log( `Found status image (${ state }): ${ image_path }` )
+        const img = nativeImage.createFromPath( image_path )
+        if( img && !img.isEmpty() ) {
+            img.setTemplateImage( true )
+            return img
+        }
+    }
+    log( `Status image missing: ${ image_path }, falling back to logo` )
+    return get_logo_template( 80, state !== 'battery' )
+}
+
 module.exports = {
-    get_logo_template
+    get_logo_template,
+    get_status_icon
 }

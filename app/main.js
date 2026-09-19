@@ -9,6 +9,19 @@ require( 'update-electron-app' )( {
     }
 } )
 
+// Prevent app from quitting when all windows are closed (tray-only app)
+app.on( 'window-all-closed', ( e ) => {
+    e.preventDefault()
+} )
+
+// Global error handlers to keep tray daemon alive
+process.on( 'uncaughtException', ( error ) => {
+    log( 'Uncaught Exception in main: ', error )
+} )
+process.on( 'unhandledRejection', ( reason ) => {
+    log( 'Unhandled Rejection in main: ', reason )
+} )
+
 /* ///////////////////////////////
 // Event listeners
 // /////////////////////////////*/
@@ -20,7 +33,7 @@ app.whenReady().then( set_initial_interface )
 // /////////////////////////////*/
 
 // Hide dock entry
-app.dock.hide()
+if( app.dock ) app.dock.hide()
 
 /* ///////////////////////////////
 // Debugging
