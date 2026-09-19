@@ -244,11 +244,10 @@ const initialize_battery = async () => {
             if( skipupdate ) return log( `Skipping update due to environment variable` )
             log( `Updating battery...` )
             try {
-                const result = await exec_async( `sudo -n ${ battery } update_silent` )
+                const result = await exec_async( `sudo -n ${ battery } update_silent`, 5000 )
                 log( `Update details: `, result )
             } catch ( e ) {
-                log( `Battery update failed: `, e )
-                await alert( `Couldn’t complete the update.\n\n${e.message}`)
+                log( `Battery background update skipped or failed: `, e?.message || e )
             }
         }
 
