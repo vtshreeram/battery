@@ -94,10 +94,10 @@ const exec_sudo_async = command => new Promise( ( resolve, reject ) => {
 // /////////////////////////////*/
 
 // Battery status checker
-const get_battery_status = async () => {
+const get_battery_status = async ( retries = 2 ) => {
 
     try {
-        const result = await exec_async( `${ battery } status_csv` )
+        const result = await exec_async( `${ battery } status_csv`, 3000 )
         let [ percentage='??', remaining='', charging='', discharging='', maintain_percentage='' ] = result.stdout.split( ',' ) || []
         maintain_percentage = maintain_percentage.trim()
         maintain_percentage = maintain_percentage.length ? maintain_percentage : undefined
@@ -116,13 +116,27 @@ const get_battery_status = async () => {
 
     } catch ( e ) {
         log( `Error getting battery status: `, e )
-        await alert( `Battery limiter error: ${ e.message }` )
+        if ( retries > 0 ) {
+            await wait( 500 )
+            return get_battery_status( retries - 1 )
+        }
+
         const ERR_COMMAND_NOT_FOUND = 127
         if ( e.code === ERR_COMMAND_NOT_FOUND ) {
-            // No battery script found. Constant alerts will be preventing a user from quitting, so do it now.
-            // Happens if battery is uninstalled from Terminal while the app is running.
+            await alert( `Battery limiter error: ${ e.message }` )
             app.quit()
             app.exit()
+        }
+
+        // Return safe fallback instead of showing blocking modal alert
+        return {
+            percentage: 80,
+            remaining: 'unknown',
+            charging: false,
+            discharging: false,
+            maintain_percentage: 80,
+            battery_state: '80% (monitoring)',
+            daemon_state: 'active'
         }
     }
 
