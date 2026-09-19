@@ -103,6 +103,33 @@ const toggle_icon_style_setting = () => {
     }
 }
 
+const indicator_symbol_path = path.join( os.homedir(), '.battery', 'indicator_symbol.setting' )
+
+const get_indicator_symbol_setting = () => {
+    try {
+        if( fs.existsSync( indicator_symbol_path ) ) {
+            const val = fs.readFileSync( indicator_symbol_path, 'utf8' ).trim()
+            if( ['⚡', '🛡️', '🔌', '●'].includes( val ) ) return val
+        }
+    } catch( e ) {
+        log( `Error reading indicator symbol setting: `, e )
+    }
+    return '⚡'
+}
+
+const set_indicator_symbol_setting = ( symbol ) => {
+    try {
+        const dir = path.dirname( indicator_symbol_path )
+        if( !fs.existsSync( dir ) ) fs.mkdirSync( dir, { recursive: true } )
+        fs.writeFileSync( indicator_symbol_path, symbol )
+        log( `Setting indicator symbol to: ${ symbol }` )
+        return symbol
+    } catch( e ) {
+        log( `Error updating indicator symbol setting: `, e )
+        return get_indicator_symbol_setting()
+    }
+}
+
 module.exports = {
     get_force_discharge_setting,
     toggle_force_discharge,
@@ -110,5 +137,7 @@ module.exports = {
     get_notifications_setting,
     toggle_notifications_setting,
     get_icon_style_setting,
-    toggle_icon_style_setting
+    toggle_icon_style_setting,
+    get_indicator_symbol_setting,
+    set_indicator_symbol_setting
 }
