@@ -1,8 +1,8 @@
-const { shell, app, Tray, Menu, powerMonitor, nativeTheme } = require( 'electron' )
+const { shell, app, Tray, Menu, powerMonitor, nativeTheme, nativeImage } = require( 'electron' )
 const { enable_battery_limiter, disable_battery_limiter, initialize_battery, is_limiter_enabled, get_battery_status, uninstall_battery } = require( './battery' )
 const { log } = require( "./helpers" )
 const { get_logo_template } = require( './theme' )
-const { get_force_discharge_setting, update_force_discharge_setting, get_notifications_setting, toggle_notifications_setting } = require( './settings' )
+const { get_force_discharge_setting, update_force_discharge_setting, get_notifications_setting, toggle_notifications_setting, get_icon_style_setting, toggle_icon_style_setting } = require( './settings' )
 
 /* ///////////////////////////////
 // Menu helpers
@@ -26,9 +26,18 @@ const generate_app_menu = async () => {
         // Check notifications setting
         const notifications_on = get_notifications_setting()
 
-        // Set tray icon
-        log( `Generate app menu percentage: ${ percentage } (discharge ${ allow_discharge ? 'allowed' : 'disallowed' }, limited ${ limiter_on ? 'on' : 'off' })` )
-        tray.setImage( get_logo_template( percentage, limiter_on ) )
+        // Check icon display style setting
+        const icon_style = get_icon_style_setting()
+
+        // Set tray icon / title
+        log( `Generate app menu percentage: ${ percentage } (style: ${ icon_style }, discharge ${ allow_discharge ? 'allowed' : 'disallowed' }, limited ${ limiter_on ? 'on' : 'off' })` )
+        if( icon_style === 'text' ) {
+            tray.setImage( nativeImage.createEmpty() )
+            tray.setTitle( ` ${ percentage }% ${ limiter_on ? '⚡' : '' }`.trim() )
+        } else {
+            tray.setTitle( '' )
+            tray.setImage( get_logo_template( percentage, limiter_on ) )
+        }
 
         // Build menu
         return Menu.buildFromTemplate( [
@@ -62,6 +71,15 @@ const generate_app_menu = async () => {
             {
                 label: `Advanced settings`,
                 submenu: [
+                    {
+                        label: `Modern text display (${ percentage }% ⚡)`,
+                        type: 'checkbox',
+                        checked: icon_style === 'text',
+                        click: async () => {
+                            toggle_icon_style_setting()
+                            await refresh_tray()
+                        }
+                    },
                     {
                         label: `Desktop notifications`,
                         type: 'checkbox',
@@ -176,10 +194,14 @@ const refresh_tray = async ( force_interactive_refresh = false ) => {
 const refresh_logo = async ( percent=80, force ) => {
 
     log( `Refresh logo for percentage ${ percent }, force ${ force }` )
-    if( force == 'active' ) return tray.setImage( get_logo_template( percent, true ) )
-    if( force == 'inactive' ) return tray.setImage( get_logo_template( percent, false ) )
+    const icon_style = get_icon_style_setting()
+    const is_enabled = force === 'active' ? true : force === 'inactive' ? false : await is_limiter_enabled()
 
-    const is_enabled = await is_limiter_enabled()
+    if( icon_style === 'text' ) {
+        tray.setImage( nativeImage.createEmpty() )
+        return tray.setTitle( ` ${ percent }% ${ is_enabled ? '⚡' : '' }`.trim() )
+    }
+    tray.setTitle( '' )
     return tray.setImage( get_logo_template( percent, is_enabled ) )
 }
 
