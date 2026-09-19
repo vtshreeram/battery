@@ -53,7 +53,7 @@ updatefolder="$tempfolder/battery"
 mkdir -p $updatefolder
 
 echo "[ 2 ] Downloading the latest battery version"
-if ! curl -sS -o $updatefolder/battery.sh https://raw.githubusercontent.com/vtshreeram/battery/feature/custom-indicators-and-notifications/battery.sh; then
+if ! curl -sS -o $updatefolder/battery.sh https://raw.githubusercontent.com/vtshreeram/battery/main/battery.sh; then
 	err=$?
 	echo -e "\n❌ Failed to download the update.\n"
 	exit $err

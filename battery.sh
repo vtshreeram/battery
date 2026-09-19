@@ -52,7 +52,7 @@ smc_binary="$binfolder/smc"
 # Security note: Do NOT allow github_user or github_branch to be injected via environment
 #                variables or any other means. Keep them hardcoded.
 github_user="vtshreeram"
-github_branch="feature/custom-indicators-and-notifications"
+github_branch="main"
 github_url_setup_sh="https://raw.githubusercontent.com/${github_user}/battery/${github_branch}/setup.sh"
 github_url_update_sh="https://raw.githubusercontent.com/${github_user}/battery/${github_branch}/update.sh"
 github_url_battery_sh="https://raw.githubusercontent.com/${github_user}/battery/${github_branch}/battery.sh"
