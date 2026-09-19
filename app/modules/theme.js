@@ -46,11 +46,19 @@ ipcMain.handle( 'dark-mode:system', () => {
     nativeTheme.themeSource = 'system'
 } )
 
-const get_status_icon = ( is_charging = true ) => {
-    const filename = is_charging ? 'charging-Template.png' : 'battery-Template.png'
+const get_status_icon = ( state = 'charging' ) => {
+    let filename
+    if( state === 'protected' ) {
+        filename = 'status-protected-Template.png'
+    } else if( state === 'charging' || state === true ) {
+        filename = 'status-charging-Template.png'
+    } else {
+        filename = 'status-battery-Template.png'
+    }
+
     const image_path = path.join( asset_path, filename )
     if( existsSync( image_path ) ) {
-        log( `Found status image (${ is_charging ? 'charging' : 'battery' }): ${ image_path }` )
+        log( `Found status image (${ state }): ${ image_path }` )
         const img = nativeImage.createFromPath( image_path )
         if( img && !img.isEmpty() ) {
             img.setTemplateImage( true )
@@ -58,7 +66,7 @@ const get_status_icon = ( is_charging = true ) => {
         }
     }
     log( `Status image missing: ${ image_path }, falling back to logo` )
-    return get_logo_template( 80, is_charging )
+    return get_logo_template( 80, state !== 'battery' )
 }
 
 module.exports = {

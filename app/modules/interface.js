@@ -29,13 +29,34 @@ const generate_app_menu = async () => {
         // Check icon display style setting
         const icon_style = get_icon_style_setting()
 
-        // Determine if running on battery or charging/connected
+        // Determine functional limiter state
         const is_on_battery = powerMonitor.onBatteryPower || discharging
-        const is_charging = !is_on_battery
+        let current_state = 'battery'
+        let tooltip_text = ''
+        let friendly_status = ''
 
-        // Set tray icon and title
-        log( `Generate app menu percentage: ${ percentage } (style: ${ icon_style }, is_charging: ${ is_charging }, discharge ${ allow_discharge ? 'allowed' : 'disallowed' }, limited ${ limiter_on ? 'on' : 'off' })` )
-        tray.setImage( get_status_icon( is_charging ) )
+        if( is_on_battery ) {
+            current_state = 'battery'
+            friendly_status = discharging ? `Discharging to ${ maintain_percentage }%` : 'Running on Battery'
+            tooltip_text = `Battery: ${ percentage }% • ${ friendly_status }`
+        } else if( limiter_on && (!charging || Number( percentage ) >= Number( maintain_percentage )) ) {
+            current_state = 'protected'
+            friendly_status = `Protected at ${ maintain_percentage }% (Adapter Bypass)`
+            tooltip_text = `Battery: ${ percentage }% • Protected at ${ maintain_percentage }%`
+        } else if( charging || Number( percentage ) < Number( maintain_percentage ) ) {
+            current_state = 'charging'
+            friendly_status = `Charging to ${ maintain_percentage }%`
+            tooltip_text = `Battery: ${ percentage }% • Charging to ${ maintain_percentage }%`
+        } else {
+            current_state = 'battery'
+            friendly_status = daemon_state || 'Monitoring'
+            tooltip_text = `Battery: ${ percentage }% • ${ friendly_status }`
+        }
+
+        // Set tray icon, title, and tooltip
+        log( `Generate app menu: ${ percentage }% (state: ${ current_state }, status: ${ friendly_status })` )
+        tray.setImage( get_status_icon( current_state ) )
+        tray.setToolTip( tooltip_text )
 
         if( icon_style === 'text' ) {
             tray.setTitle( ` ${ percentage }%` )
@@ -62,11 +83,11 @@ const generate_app_menu = async () => {
                 type: 'separator'
             },
             {
-                label: `Battery: ${ battery_state }`,
+                label: `Status: ${ friendly_status }`,
                 enabled: false
             },
             {
-                label: `Power: ${ daemon_state }`,
+                label: `Battery: ${ battery_state }`,
                 enabled: false
             },
             {
@@ -199,9 +220,11 @@ const refresh_logo = async ( percent=80, force ) => {
 
     log( `Refresh logo for percentage ${ percent }, force ${ force }` )
     const icon_style = get_icon_style_setting()
-    const is_charging = !powerMonitor.onBatteryPower
+    const limiter_on = await is_limiter_enabled()
+    const is_on_battery = powerMonitor.onBatteryPower
+    const state = is_on_battery ? 'battery' : (limiter_on ? 'protected' : 'charging')
 
-    tray.setImage( get_status_icon( is_charging ) )
+    tray.setImage( get_status_icon( state ) )
     if( icon_style === 'text' ) {
         return tray.setTitle( ` ${ percent }%` )
     }
@@ -215,8 +238,8 @@ const refresh_logo = async ( percent=80, force ) => {
 async function set_initial_interface() {
 
     log('\n===\n=== Starting tray app\n===\n')
-    const is_charging = !powerMonitor.onBatteryPower
-    tray = new Tray( get_status_icon( is_charging ) )
+    const is_on_battery = powerMonitor.onBatteryPower
+    tray = new Tray( get_status_icon( is_on_battery ? 'battery' : 'charging' ) )
 
     // Set "loading" context
     tray.setTitle( '  updating...' )
