@@ -1,5 +1,5 @@
-const { shell, app, Tray, Menu, powerMonitor, nativeTheme, nativeImage } = require( 'electron' )
-const { enable_battery_limiter, disable_battery_limiter, initialize_battery, is_limiter_enabled, get_battery_status, uninstall_battery } = require( './battery' )
+const { shell, app, Tray, Menu, powerMonitor, nativeTheme, nativeImage, Notification } = require( 'electron' )
+const { enable_battery_limiter, disable_battery_limiter, initialize_battery, is_limiter_enabled, get_battery_status, uninstall_battery, get_battery_health } = require( './battery' )
 const { log } = require( "./helpers" )
 const { get_logo_template, get_status_icon } = require( './theme' )
 const { get_force_discharge_setting, update_force_discharge_setting, get_notifications_setting, toggle_notifications_setting, get_icon_style_setting, toggle_icon_style_setting } = require( './settings' )
@@ -9,13 +9,58 @@ const { get_force_discharge_setting, update_force_discharge_setting, get_notific
 // /////////////////////////////*/
 let tray = undefined
 
+// Notification tracker for desktop alerts
+const notification_tracker = {
+    target_reached: false,
+    low_20: false,
+    crit_10: false
+}
+
+const check_and_send_notifications = ( is_on_battery, percentage, maintain_percentage, notifications_on ) => {
+    if( !notifications_on || !Notification.isSupported() ) return
+
+    const pct = Number( percentage )
+    const target = Number( maintain_percentage || 80 )
+
+    if( !is_on_battery ) {
+        // Reset low battery flags when plugged into AC
+        notification_tracker.low_20 = false
+        notification_tracker.crit_10 = false
+
+        if( pct >= target && !notification_tracker.target_reached ) {
+            new Notification( {
+                title: '🔋 Battery Protected',
+                body: `Target ${ target }% reached. Switched to AC Adapter bypass (0 cycles).`
+            } ).show()
+            notification_tracker.target_reached = true
+        }
+    } else {
+        // Running on battery: reset target reached flag
+        notification_tracker.target_reached = false
+
+        if( pct <= 10 && !notification_tracker.crit_10 ) {
+            new Notification( {
+                title: `🚨 Critical Battery (${ pct }%)`,
+                body: 'Battery is below 10%! Plug in charger immediately.'
+            } ).show()
+            notification_tracker.crit_10 = true
+            notification_tracker.low_20 = true
+        } else if( pct <= 20 && !notification_tracker.low_20 ) {
+            new Notification( {
+                title: `🪫 Low Battery (${ pct }%)`,
+                body: 'Connect charger to preserve battery longevity and avoid deep discharge.'
+            } ).show()
+            notification_tracker.low_20 = true
+        }
+    }
+}
 
 // Set interface to usable
 const generate_app_menu = async () => {
 
     try {
         // Get battery and daemon status
-        const { battery_state, daemon_state, maintain_percentage=80, percentage, discharging } = await get_battery_status()
+        const { battery_state, daemon_state, maintain_percentage=80, percentage, discharging, charging } = await get_battery_status()
 
         // Check if limiter is on
         const limiter_on = await is_limiter_enabled()
@@ -28,6 +73,9 @@ const generate_app_menu = async () => {
 
         // Check icon display style setting
         const icon_style = get_icon_style_setting()
+
+        // Get hardware health diagnostics
+        const health = await get_battery_health()
 
         // Determine functional limiter state
         const is_on_battery = powerMonitor.onBatteryPower || discharging
@@ -52,6 +100,9 @@ const generate_app_menu = async () => {
             friendly_status = daemon_state || 'Monitoring'
             tooltip_text = `Battery: ${ percentage }% • ${ friendly_status }`
         }
+
+        // Trigger desktop notification if appropriate
+        check_and_send_notifications( is_on_battery, percentage, maintain_percentage, notifications_on )
 
         // Set tray icon, title, and tooltip
         log( `Generate app menu: ${ percentage }% (state: ${ current_state }, status: ${ friendly_status })` )
@@ -89,6 +140,27 @@ const generate_app_menu = async () => {
             {
                 label: `Battery: ${ battery_state }`,
                 enabled: false
+            },
+            {
+                label: `Battery Health`,
+                submenu: [
+                    {
+                        label: `Maximum Capacity: ${ health.capacity }`,
+                        enabled: false
+                    },
+                    {
+                        label: `Cycle Count: ${ health.cycles } cycles`,
+                        enabled: false
+                    },
+                    {
+                        label: `Hardware Condition: ${ health.condition }`,
+                        enabled: false
+                    },
+                    {
+                        label: `Temperature: ${ health.temperature }`,
+                        enabled: false
+                    }
+                ]
             },
             {
                 type: 'separator'
@@ -186,11 +258,11 @@ const set_interface_update_timer = async ( disable_only=false ) => {
     // Calculate update speed
     const { maintain_percentage=80, percentage, charging } = await get_battery_status()
     const percentage_delta = Math.floor( Math.abs( percentage - maintain_percentage ) )
-    const slow_refresh_interval_in_ms = 1000 * 60 * 10
-    const fast_refresh_interval_in_ms = 1000 * 60 * .5
+    const slow_refresh_interval_in_ms = 1000 * 60 * 1 // 1 minute (was 10 minutes)
+    const fast_refresh_interval_in_ms = 1000 * 30      // 30 seconds
     const battery_full_and_charging = charging && percentage == 100
     const refresh_speed =  percentage_delta < 5 || powerMonitor.onBatteryPower || battery_full_and_charging  ? slow_refresh_interval_in_ms : fast_refresh_interval_in_ms
-    log( `Setting interface refresh speed to ${ refresh_speed / 1000 / 60 } minutes` )
+    log( `Setting interface refresh speed to ${ refresh_speed / 1000 } seconds` )
     if( refresh_timer ) clearInterval( refresh_timer )
     // eslint-disable-next-line no-use-before-define
     if( !disable_only ) refresh_timer = setInterval( refresh_tray, refresh_speed )
@@ -275,9 +347,17 @@ async function set_initial_interface() {
     // Set refresh timer for the battery icon
     set_interface_update_timer()
     powerMonitor.on( 'lock-screen', () => set_interface_update_timer( true ) )
-    powerMonitor.on( 'unlock-screen', () => set_interface_update_timer() )
+    powerMonitor.on( 'unlock-screen', async () => {
+        log( 'Screen unlocked: refreshing tray' )
+        set_interface_update_timer()
+        await refresh_tray()
+    } )
     powerMonitor.on( 'suspend', () => set_interface_update_timer( true ) )
-    powerMonitor.on( 'resume', () => set_interface_update_timer() )
+    powerMonitor.on( 'resume', async () => {
+        log( 'System resumed from sleep: refreshing tray' )
+        set_interface_update_timer()
+        await refresh_tray()
+    } )
 
 }
 

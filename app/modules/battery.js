@@ -296,11 +296,53 @@ const is_limiter_enabled = async () => {
 
 }
 
+let cached_health = null
+let last_health_fetch = 0
+
+const get_battery_health = async () => {
+    const now = Date.now()
+    if( cached_health && (now - last_health_fetch < 60000) ) {
+        return cached_health
+    }
+
+    try {
+        const ioreg_p = exec_async( `ioreg -r -c AppleSmartBattery` ).catch( () => ({ stdout: '' }) )
+        const profiler_p = exec_async( `system_profiler SPPowerDataType` ).catch( () => ({ stdout: '' }) )
+
+        const [ ioreg_res, profiler_res ] = await Promise.all( [ ioreg_p, profiler_p ] )
+
+        const cycle_match = ioreg_res.stdout.match( /"CycleCount" = (\d+)/ )
+        const temp_match = ioreg_res.stdout.match( /"Temperature" = (\d+)/ )
+        const capacity_match = profiler_res.stdout.match( /Maximum Capacity:\s*([0-9]+%)/i )
+        const condition_match = profiler_res.stdout.match( /Condition:\s*([^\n\r]+)/i )
+
+        let temperature = 'Unknown'
+        if( temp_match && temp_match[1] ) {
+            const temp_c = (Number( temp_match[1] ) / 100).toFixed(1)
+            const temp_f = ((Number( temp_c ) * 9 / 5) + 32).toFixed(1)
+            temperature = `${ temp_c }°C / ${ temp_f }°F`
+        }
+
+        cached_health = {
+            cycles: cycle_match ? cycle_match[1] : 'N/A',
+            capacity: capacity_match ? capacity_match[1] : 'N/A',
+            condition: condition_match ? condition_match[1].trim() : 'Normal',
+            temperature
+        }
+        last_health_fetch = now
+        return cached_health
+    } catch( e ) {
+        log( 'Error getting battery health: ', e )
+        return { cycles: 'N/A', capacity: 'N/A', condition: 'Normal', temperature: 'Unknown' }
+    }
+}
+
 module.exports = {
     enable_battery_limiter,
     disable_battery_limiter,
     initialize_battery,
     is_limiter_enabled,
     get_battery_status,
-    uninstall_battery
+    uninstall_battery,
+    get_battery_health
 }
