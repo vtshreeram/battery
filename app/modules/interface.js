@@ -13,7 +13,7 @@ const {
     switch_to_power
 } = require( './battery' )
 const { log } = require( './helpers' )
-const { get_status_icon } = require( './theme' )
+const { get_status_icon, round_battery_level } = require( './theme' )
 const {
     get_force_discharge_setting,
     update_force_discharge_setting,
@@ -64,10 +64,13 @@ let last_refresh_interval_ms = null
 let refresh_in_flight = false
 let refresh_queued = false
 
-const apply_tray_visuals = ( iconState, title, tooltip ) => {
-    if( iconState !== last_icon_state ) {
-        tray.setImage( get_status_icon( iconState ) )
-        last_icon_state = iconState
+const apply_tray_visuals = ( iconState, title, tooltip, percent = null ) => {
+    const visual_key = iconState === 'charging' || iconState === 'protected'
+        ? iconState
+        : `battery-${ round_battery_level( percent ) }`
+    if( visual_key !== last_icon_state ) {
+        tray.setImage( get_status_icon( iconState, percent ) )
+        last_icon_state = visual_key
     }
     if( tooltip !== last_tooltip ) {
         tray.setToolTip( tooltip )
@@ -202,9 +205,10 @@ const generate_app_menu = async () => {
         if( !status || !status.available ) {
             log( `[Interface] Battery status unavailable, rendering error menu` )
             apply_tray_visuals(
-                'unplugged',
+                'battery',
                 icon_style === 'text' ? ' --%' : '',
-                'Battery King: Status unavailable'
+                'Battery King: Status unavailable',
+                0
             )
 
             return Menu.buildFromTemplate( [
@@ -296,7 +300,8 @@ const generate_app_menu = async () => {
         apply_tray_visuals(
             semantic.iconState,
             icon_style === 'text' ? ` ${ status.percentage }%` : '',
-            `Battery King: ${ status.percentage }% • ${ semantic.label }`
+            `Battery King: ${ status.percentage }% • ${ semantic.label }`,
+            status.percentage
         )
 
         // Build limit selection submenu
@@ -646,8 +651,8 @@ const set_interface_update_timer = ( disable_only = false ) => {
 async function set_initial_interface() {
     log( '\n===\n=== Starting tray app\n===\n' )
     const is_on_battery = powerMonitor.onBatteryPower
-    last_icon_state = is_on_battery ? 'unplugged' : 'charging'
-    tray = new Tray( get_status_icon( last_icon_state ) )
+    last_icon_state = is_on_battery ? 'battery' : 'charging'
+    tray = new Tray( get_status_icon( last_icon_state, 100 ) )
     log( '[Interface] Tray icon created' )
 
     // Initialize IPC bridge with Settings Window

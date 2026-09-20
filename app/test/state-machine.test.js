@@ -8,7 +8,7 @@ test( 'State Machine - Unavailable when status is unavailable', () => {
         limiter_enabled: true
     } )
     assert.equal( res.state, ProtectionState.UNAVAILABLE )
-    assert.equal( res.iconState, 'unplugged' )
+    assert.equal( res.iconState, 'battery' )
 } )
 
 test( 'State Machine - Calibrating when calibration_active is true', () => {
@@ -64,7 +64,7 @@ test( 'State Machine - Force discharging state', () => {
         on_battery: false
     } )
     assert.equal( res.state, ProtectionState.FORCE_DISCHARGING )
-    assert.equal( res.iconState, 'unplugged' )
+    assert.equal( res.iconState, 'battery' )
     assert.match( res.label, /Discharging to 80%/ )
 } )
 
@@ -76,7 +76,7 @@ test( 'State Machine - Adapter connected plus SMC discharge is force-discharge',
         ac_attached: true
     } )
     assert.equal( res.state, ProtectionState.FORCE_DISCHARGING )
-    assert.equal( res.iconState, 'unplugged' )
+    assert.equal( res.iconState, 'battery' )
 } )
 
 test( 'State Machine - Unplugged discharge is running on battery, not force-discharge', () => {
@@ -88,7 +88,7 @@ test( 'State Machine - Unplugged discharge is running on battery, not force-disc
     } )
     assert.equal( res.state, ProtectionState.ON_BATTERY )
     assert.equal( res.label, 'Running on Battery' )
-    assert.equal( res.iconState, 'unplugged' )
+    assert.equal( res.iconState, 'battery' )
 } )
 
 test( 'State Machine - Running on battery', () => {
@@ -98,7 +98,7 @@ test( 'State Machine - Running on battery', () => {
         on_battery: true
     } )
     assert.equal( res.state, ProtectionState.ON_BATTERY )
-    assert.equal( res.iconState, 'unplugged' )
+    assert.equal( res.iconState, 'battery' )
 } )
 
 test( 'pick_status_for_display keeps last good reading on a failed poll', () => {

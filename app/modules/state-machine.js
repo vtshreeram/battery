@@ -43,7 +43,7 @@ const resolve_battery_state = ( {
         return {
             state: ProtectionState.UNAVAILABLE,
             label: 'Battery status unavailable',
-            iconState: 'unplugged'
+            iconState: 'battery'
         }
     }
 
@@ -62,7 +62,7 @@ const resolve_battery_state = ( {
             return {
                 state: ProtectionState.ON_BATTERY,
                 label: 'Charge to 100% paused (running on battery)',
-                iconState: 'unplugged'
+                iconState: 'battery'
             }
         }
         if( status.percentage >= 100 ) {
@@ -84,7 +84,7 @@ const resolve_battery_state = ( {
         return {
             state: ProtectionState.PAUSED,
             label: 'Protection temporarily paused',
-            iconState: on_battery ? 'unplugged' : 'charging'
+            iconState: on_battery ? 'battery' : 'charging'
         }
     }
 
@@ -93,7 +93,7 @@ const resolve_battery_state = ( {
         return {
             state: ProtectionState.TEMP_WARNING,
             label: `High battery temperature (${ temperature_c }°C)`,
-            iconState: on_battery ? 'unplugged' :  limiter_enabled ? 'protected' : 'charging'
+            iconState: on_battery ? 'battery' : limiter_enabled ? 'protected' : 'charging'
         }
     }
 
@@ -103,11 +103,11 @@ const resolve_battery_state = ( {
     const force_discharge = Boolean( status.discharging ) && ac_attached === true
     const inferred_force_discharge = Boolean( status.discharging ) && !on_battery && ac_attached !== false
 
-    if( physically_unplugged ||  on_battery && !force_discharge  ) {
+    if( physically_unplugged || ( on_battery && !force_discharge ) ) {
         return {
             state: ProtectionState.ON_BATTERY,
             label: 'Running on Battery',
-            iconState: 'unplugged'
+            iconState: 'battery'
         }
     }
 
@@ -115,7 +115,7 @@ const resolve_battery_state = ( {
         return {
             state: ProtectionState.FORCE_DISCHARGING,
             label: `Discharging to ${ status.maintain_percentage || 80 }%`,
-            iconState: 'unplugged'
+            iconState: 'battery'
         }
     }
 
@@ -124,7 +124,7 @@ const resolve_battery_state = ( {
         return {
             state: ProtectionState.DISABLED,
             label: status.charging ? 'Charging (Limiter disabled)' : 'Limiter disabled',
-            iconState: status.charging ? 'charging' : 'unplugged'
+            iconState: status.charging ? 'charging' : 'battery'
         }
     }
 
