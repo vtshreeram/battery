@@ -4,7 +4,7 @@
 ## Update management
 ## variables are used by this binary as well at the update script
 ## ###############
-BATTERY_CLI_VERSION="v1.3.4"
+BATTERY_CLI_VERSION="v1.3.5"
 
 # If a script may run as root:
 #   - Reset PATH to safe defaults at the very beginning of the script.
@@ -62,16 +62,16 @@ github_url_battery_sh="https://raw.githubusercontent.com/${github_user}/battery/
 ## ###############
 
 # Create config folder if needed
-mkdir -p $configfolder
+mkdir -p "$configfolder"
 
 # create logfile if needed
-touch $logfile
+touch "$logfile"
 
 # Trim logfile if needed
 logsize=$(stat -f%z "$logfile")
 max_logsize_bytes=5000000
 if ((logsize > max_logsize_bytes)); then
-	tail -n 100 $logfile >$logfile
+	tail -n 100 "$logfile" > "$logfile.tmp" && mv "$logfile.tmp" "$logfile"
 fi
 
 # CLI help message
@@ -146,7 +146,7 @@ Usage:
 # - Allows this script to execute 'sudo smc -w' commands without requiring a user password.
 # - Allows passwordless updates.
 visudoconfig="
-# Visudo settings for the battery utility installed from https://github.com/actuallymentor/battery
+# Visudo settings for the battery utility installed from https://github.com/vtshreeram/battery
 # intended to be placed in $visudo_file on a mac
 
 # Allow passwordless update (All battery app executables are owned by root to prevent privilege escalation attacks)
@@ -252,11 +252,11 @@ function valid_voltage() {
 
 function smc_read_hex() {
 	key=$1
-	line=$(echo $($smc_binary -k $key -r))
+	line=$("$smc_binary" -k "$key" -r 2>/dev/null)
 	if [[ $line =~ "no data" ]]; then
 		echo
 	else
-		echo ${line#*bytes} | tr -d ' ' | tr -d ')'
+		echo "${line#*bytes}" | tr -d ' ' | tr -d ')'
 	fi
 }
 
@@ -449,7 +449,7 @@ function get_smc_discharging_status() {
 ## ###############
 
 function get_battery_percentage() {
-	battery_percentage=$(pmset -g batt | tail -n1 | awk '{print $3}' | sed s:\%\;::)
+	battery_percentage=$(pmset -g batt | tail -n1 | awk '{print $3}' | tr -d '%;')
 	echo "$battery_percentage"
 }
 
@@ -464,7 +464,7 @@ function get_charger_state() {
 }
 
 function get_maintain_percentage() {
-	maintain_percentage=$(cat $maintain_percentage_tracker_file 2>/dev/null)
+	maintain_percentage=$(cat "$maintain_percentage_tracker_file" 2>/dev/null)
 	echo "$maintain_percentage"
 }
 
@@ -526,8 +526,10 @@ function assert_running_as_root() {
 function ensure_owner() {
 	local owner="$1" group="$2" path="$3"
 	[[ -e $path ]] || { return 1; }
-	local cur_owner=$(stat -f '%Su' "$path")
-	local cur_group=$(stat -f '%Sg' "$path")
+	local cur_owner
+	cur_owner=$(stat -f '%Su' "$path")
+	local cur_group
+	cur_group=$(stat -f '%Sg' "$path")
 	if [[ $cur_owner != "$owner" || $cur_group != "$group" ]]; then
 		sudo chown -h "${owner}:${group}" "$path"
 	fi
@@ -536,7 +538,8 @@ function ensure_owner() {
 function ensure_owner_mode() {
 	local owner="$1" group="$2" mode="$3" path="$4"
 	ensure_owner "$owner" "$group" "$path" || return
-	local cur_mode=$(stat -f '%Lp' "$path")
+	local cur_mode
+	cur_mode=$(stat -f '%Lp' "$path")
 	if [[ $cur_mode != "${mode#0}" ]]; then
 		sudo chmod -h "$mode" "$path"
 	fi
@@ -547,15 +550,15 @@ function ensure_owner_mode() {
 function fixup_installation_owner_mode() {
 	local username=$1
 
-	ensure_owner_mode $username staff 755 "$(dirname "$daemon_path")"
-	ensure_owner_mode $username staff 644 "$daemon_path"
+	ensure_owner_mode "$username" staff 755 "$(dirname "$daemon_path")"
+	ensure_owner_mode "$username" staff 644 "$daemon_path"
 
-	ensure_owner_mode $username staff 755 "$configfolder"
-	ensure_owner_mode $username staff 644 "$pidfile"
-	ensure_owner_mode $username staff 644 "$logfile"
-	ensure_owner_mode $username staff 644 "$maintain_percentage_tracker_file"
-	ensure_owner_mode $username staff 644 "$maintain_voltage_tracker_file"
-	ensure_owner_mode $username staff 644 "$calibrate_pidfile"
+	ensure_owner_mode "$username" staff 755 "$configfolder"
+	ensure_owner_mode "$username" staff 644 "$pidfile"
+	ensure_owner_mode "$username" staff 644 "$logfile"
+	ensure_owner_mode "$username" staff 644 "$maintain_percentage_tracker_file"
+	ensure_owner_mode "$username" staff 644 "$maintain_voltage_tracker_file"
+	ensure_owner_mode "$username" staff 644 "$calibrate_pidfile"
 
 	ensure_owner_mode root wheel 755 "$visudo_folder"
 	ensure_owner_mode root wheel 440 "$visudo_file"
@@ -610,12 +613,11 @@ if [[ "$action" == "visudo" ]]; then
 
 	# Allocate temp folder
 	tempfolder="$(mktemp -d)"
-	function cleanup() { rm -rf "$tempfolder"; }
-	trap cleanup EXIT
+	trap 'rm -rf "$tempfolder"' EXIT
 
 	# Write the visudo file to a tempfile
 	visudo_tmpfile="$tempfolder/visudo.tmp"
-	echo -e "$visudoconfig" >$visudo_tmpfile
+	echo -e "$visudoconfig" > "$visudo_tmpfile"
 
 	# If the visudo folder does not exist, make it
 	if ! test -d "$visudo_folder"; then
@@ -624,7 +626,7 @@ if [[ "$action" == "visudo" ]]; then
 	ensure_owner_mode root wheel 755 "$visudo_folder"
 
 	# If the visudo file is the same (no error, exit code 0), set the permissions just
-	if sudo cmp $visudo_file $visudo_tmpfile &>/dev/null; then
+	if sudo cmp "$visudo_file" "$visudo_tmpfile" &>/dev/null; then
 
 		echo "☑️  The existing battery visudo file is what it should be for version $BATTERY_CLI_VERSION"
 
@@ -640,10 +642,10 @@ if [[ "$action" == "visudo" ]]; then
 	fi
 
 	# Validate that the visudo tempfile is valid
-	if sudo visudo -c -f $visudo_tmpfile &>/dev/null; then
+	if sudo visudo -c -f "$visudo_tmpfile" &>/dev/null; then
 
 		# Copy the visudo file from tempfile to live location
-		sudo cp $visudo_tmpfile $visudo_file
+		sudo cp "$visudo_tmpfile" "$visudo_file"
 
 		# Set correct permissions on visudo file
 		ensure_owner_mode root wheel 440 "$visudo_file"
@@ -655,7 +657,7 @@ if [[ "$action" == "visudo" ]]; then
 
 	else
 		echo "❌ Error validating visudo file, this should never happen:"
-		sudo visudo -c -f $visudo_tmpfile
+		sudo visudo -c -f "$visudo_tmpfile"
 	fi
 
 	exit 0
@@ -666,7 +668,7 @@ if [[ "$action" == "reinstall" ]]; then
 	echo "This will run curl -sS ${github_url_setup_sh} | bash"
 	if [[ ! "$setting" == "silent" ]]; then
 		echo "Press any key to continue"
-		read
+		read -r
 	fi
 	curl -sS "$github_url_setup_sh" | bash
 	exit 0
@@ -760,7 +762,7 @@ if [[ "$action" == "uninstall" ]]; then
 	if [[ ! "$setting" == "silent" ]]; then
 		echo "This will enable charging, and remove the smc tool and battery script"
 		echo "Press any key to continue"
-		read
+		read -r
 	fi
 
 	$battery_binary maintain stop
@@ -917,7 +919,7 @@ if [[ "$action" == "maintain_synchronous" ]]; then
 	# Checking if the calibration process is running
 	if test -f "$calibrate_pidfile"; then
 		pid=$(cat "$calibrate_pidfile" 2>/dev/null)
-		kill $pid &>/dev/null
+		kill "$pid" &>/dev/null
 		log "🚨 Calibration process have been stopped"
 	fi
 
@@ -927,10 +929,10 @@ if [[ "$action" == "maintain_synchronous" ]]; then
 		# Before doing anything, log out environment details as a debugging trail
 		log "Debug trail. User: $USER, config folder: $configfolder, logfile: $logfile, file called with 1: $1, 2: $2"
 
-		maintain_percentage=$(cat $maintain_percentage_tracker_file 2>/dev/null)
-		if [[ $maintain_percentage ]]; then
+		maintain_percentage=$(cat "$maintain_percentage_tracker_file" 2>/dev/null)
+		if [[ -n "$maintain_percentage" ]]; then
 			log "Recovering maintenance percentage $maintain_percentage"
-			setting=$(echo $maintain_percentage)
+			setting="$maintain_percentage"
 		else
 			log "No setting to recover, exiting"
 			exit 0
@@ -1048,11 +1050,11 @@ if [[ "$action" == "maintain_voltage_synchronous" ]]; then
 		# Before doing anything, log out environment details as a debugging trail
 		log "Debug trail. User: $USER, config folder: $configfolder, logfile: $logfile, file called with 1: $1, 2: $2"
 
-		maintain_voltage=$(cat $maintain_voltage_tracker_file 2>/dev/null)
-		if [[ $maintain_voltage ]]; then
+		maintain_voltage=$(cat "$maintain_voltage_tracker_file" 2>/dev/null)
+		if [[ -n "$maintain_voltage" ]]; then
 			log "Recovering maintenance voltage $maintain_voltage"
-			setting=$(echo $maintain_voltage | awk '{print $1}')
-			subsetting=$(echo $maintain_voltage | awk '{print $2}')
+			setting=$(echo "$maintain_voltage" | awk '{print $1}')
+			subsetting=$(echo "$maintain_voltage" | awk '{print $2}')
 		else
 			log "No setting to recover, exiting"
 			exit 0
@@ -1096,20 +1098,20 @@ if [[ "$action" == "maintain" ]]; then
 
 	# Kill old process silently
 	if test -f "$pidfile"; then
-		log "Killing old maintain process at $(cat $pidfile)"
+		log "Killing old maintain process at $(cat "$pidfile")"
 		pid=$(cat "$pidfile" 2>/dev/null)
-		kill $pid &>/dev/null
+		kill "$pid" &>/dev/null
 	fi
 
 	if test -f "$calibrate_pidfile"; then
 		pid=$(cat "$calibrate_pidfile" 2>/dev/null)
-		kill $pid &>/dev/null
+		kill "$pid" &>/dev/null
 		log "🚨 Calibration process have been stopped"
 	fi
 
 	if [[ "$setting" == "stop" ]]; then
 		log "Killing running maintain daemons & enabling charging as default state"
-		rm $pidfile 2>/dev/null
+		rm "$pidfile" 2>/dev/null
 		$battery_binary disable_daemon
 		enable_charging
 		$battery_binary status
@@ -1152,18 +1154,18 @@ if [[ "$action" == "maintain" ]]; then
 	# Start maintenance script
 	if [ "$is_voltage" = true ]; then
 		log "Starting battery maintenance at ${setting}V ±${subsetting}V"
-		nohup $battery_binary maintain_voltage_synchronous $setting $subsetting >>$logfile &
+		nohup $battery_binary maintain_voltage_synchronous "$setting" "$subsetting" >> "$logfile" &
 	else
 		if valid_percentage_range "$setting"; then
 			log "Starting battery maintenance between ${setting/-/% and }%"
 		else
 			log "Starting battery maintenance at $setting% $subsetting"
 		fi
-		nohup $battery_binary maintain_synchronous $setting $subsetting >>$logfile &
+		nohup $battery_binary maintain_synchronous "$setting" "$subsetting" >> "$logfile" &
 	fi
 
 	# Store pid of maintenance process and setting
-	echo $! >$pidfile
+	echo $! > "$pidfile"
 	pid=$(cat "$pidfile" 2>/dev/null)
 
 	if ! [[ "$setting" == "recover" ]]; then
@@ -1172,12 +1174,12 @@ if [[ "$action" == "maintain" ]]; then
 
 		if [[ "$is_voltage" = true ]]; then
 			log "Writing new setting $setting $subsetting to $maintain_voltage_tracker_file"
-			echo "$setting $subsetting" >$maintain_voltage_tracker_file
+			echo "$setting $subsetting" > "$maintain_voltage_tracker_file"
 			log "Maintaining battery at ${setting}V ±${subsetting}V"
 
 		else
 			log "Writing new setting $setting to $maintain_percentage_tracker_file"
-			echo $setting >$maintain_percentage_tracker_file
+			echo "$setting" > "$maintain_percentage_tracker_file"
 			if valid_percentage_range "$setting"; then
 				log "Maintaining battery between ${setting/-/% and }%"
 			else
@@ -1203,9 +1205,9 @@ if [[ "$action" == "calibrate" ]]; then
 	# Kill old process silently
 	if test -f "$calibrate_pidfile"; then
 		pid=$(cat "$calibrate_pidfile" 2>/dev/null)
-		kill $pid &>/dev/null
+		kill "$pid" &>/dev/null
 	fi
-	echo $$ >$calibrate_pidfile
+	echo $$ > "$calibrate_pidfile"
 
 	echo -e "Starting battery calibration\n"
 
@@ -1223,7 +1225,7 @@ if [[ "$action" == "calibrate" ]]; then
 	BATTERY_HELPER_MODE=1 $battery_binary discharge 80 &>/dev/null
 
 	# Remove pidfile
-	rm -f $calibrate_pidfile
+	rm -f "$calibrate_pidfile"
 
 	# Recover old maintain status
 	echo "[ 5 ] Restarting battery maintenance"
@@ -1238,16 +1240,16 @@ fi
 if [[ "$action" == "status" ]]; then
 
 	log "Battery at $(get_battery_percentage)% ($(get_remaining_time) remaining), $(get_voltage)V, smc charging $(get_smc_charging_status)"
-	if test -f $pidfile; then
-		maintain_percentage=$(cat $maintain_percentage_tracker_file 2>/dev/null)
-		if [[ $maintain_percentage ]]; then
+	if test -f "$pidfile"; then
+		maintain_percentage=$(cat "$maintain_percentage_tracker_file" 2>/dev/null)
+		if [[ -n "$maintain_percentage" ]]; then
 			if valid_percentage_range "$maintain_percentage"; then
 				maintain_level="${maintain_percentage/-/% - }%"
 			else
 				maintain_level="$maintain_percentage%"
 			fi
 		else
-			maintain_level=$(cat $maintain_voltage_tracker_file 2>/dev/null)
+			maintain_level=$(cat "$maintain_voltage_tracker_file" 2>/dev/null)
 			maintain_level=$(echo "$maintain_level" | awk '{print $1 "V ±" $2 "V"}')
 		fi
 		log "Your battery is currently being maintained at $maintain_level"
@@ -1280,8 +1282,8 @@ if [[ "$action" == "health" ]]; then
 
 	max_capacity=$(system_profiler SPPowerDataType 2>/dev/null | awk -F': ' '/Maximum Capacity/ {print $2}' | head -n1 | xargs)
 	condition=$(system_profiler SPPowerDataType 2>/dev/null | awk -F': ' '/Condition/ {print $2}' | head -n1 | xargs)
-	[[ -z "$condition" ]] && condition="Normal"
-	[[ -z "$max_capacity" ]] && max_capacity="N/A"
+	[[ -z "$condition" ]] && condition="Unavailable"
+	[[ -z "$max_capacity" ]] && max_capacity="Unavailable"
 
 	power_source=$(pmset -g batt 2>/dev/null | head -n1 | awk -F"'" '{print $2}')
 	[[ -z "$power_source" ]] && power_source="Unknown"
@@ -1292,7 +1294,7 @@ if [[ "$action" == "health" ]]; then
 
 	maintain_level="None"
 	if test -f "$pidfile"; then
-		maintain_percentage=$(cat $maintain_percentage_tracker_file 2>/dev/null)
+		maintain_percentage=$(cat "$maintain_percentage_tracker_file" 2>/dev/null)
 		if [[ -n "$maintain_percentage" ]]; then
 			maintain_level="$maintain_percentage%"
 		fi
@@ -1417,7 +1419,7 @@ if [[ "$action" == "create_daemon" ]]; then
 	fi
 
 	# enable daemon
-	launchctl enable "gui/$(id -u $USER)/com.battery.app"
+	launchctl enable "gui/$(id -u "$USER")/com.battery.app"
 	exit 0
 
 fi
@@ -1425,8 +1427,8 @@ fi
 # Disable daemon
 if [[ "$action" == "disable_daemon" ]]; then
 
-	log "Disabling daemon at gui/$(id -u $USER)/com.battery.app"
-	launchctl disable "gui/$(id -u $USER)/com.battery.app"
+	log "Disabling daemon at gui/$(id -u "$USER")/com.battery.app"
+	launchctl disable "gui/$(id -u "$USER")/com.battery.app"
 	exit 0
 
 fi
@@ -1434,7 +1436,7 @@ fi
 # Remove daemon
 if [[ "$action" == "remove_daemon" ]]; then
 
-	rm $daemon_path 2>/dev/null
+	rm "$daemon_path" 2>/dev/null
 	exit 0
 
 fi
@@ -1445,13 +1447,13 @@ if [[ "$action" == "logs" ]]; then
 	amount="${2:-100}"
 
 	echo -e "👾 Battery CLI logs:\n"
-	tail -n $amount $logfile
+	tail -n "$amount" "$logfile"
 
 	echo -e "\n🖥️	Battery GUI logs:\n"
-	tail -n $amount "$configfolder/gui.log"
+	tail -n "$amount" "$configfolder/gui.log"
 
 	echo -e "\n📁 Config folder details:\n"
-	ls -lah $configfolder
+	ls -lah "$configfolder"
 
 	echo -e "\n⚙️	Battery data:\n"
 	$battery_binary status

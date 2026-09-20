@@ -1,4 +1,4 @@
-const { ipcMain, nativeTheme, nativeImage, app } = require( 'electron' )
+const { nativeImage, app } = require( 'electron' )
 const path = require( 'path' )
 const { existsSync } = require( 'fs' )
 const { log } = require( './helpers' )
@@ -27,24 +27,6 @@ const get_logo_template = ( percent = 100, active ) => {
     log( `${ exists ? 'Found' : '🚨 Missing' } image: ${ image_path }` )
     return nativeImage.createFromPath( image_path )
 }
-
-/* ///////////////////////////////
-// Handle dark theme switching
-// /////////////////////////////*/
-ipcMain.handle( 'dark-mode:toggle', () => {
-
-    if( nativeTheme.shouldUseDarkColors ) {
-        nativeTheme.themeSource = 'light'
-    } else {
-        nativeTheme.themeSource = 'dark'
-    }
-
-    return nativeTheme.shouldUseDarkColors
-} )
-
-ipcMain.handle( 'dark-mode:system', () => {
-    nativeTheme.themeSource = 'system'
-} )
 
 const get_status_icon = ( state = 'charging' ) => {
     let filename

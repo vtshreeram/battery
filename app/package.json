@@ -29,15 +29,18 @@
     "start": "development=true electron .",
     "start:watch": "nodemon --watch . --exec 'skipupdate=true development=true electron .'",
     "build": "rm -rf ./dist/* && electron-builder build --mac --arm64",
-    "lint": "eslint --fix src"
+    "test": "node --test --test-concurrency=1 test/**/*.test.js",
+    "lint": "eslint main.js modules test",
+    "lint:check": "eslint main.js modules test",
+    "lint:fix": "eslint --fix main.js modules test"
   },
-  "repository": "https://github.com/actuallymentor/battery",
+  "repository": "https://github.com/vtshreeram/battery",
   "keywords": [
     "battery",
     "m1",
     "mac"
   ],
-  "author": "actuallymentor",
+  "author": "vtshreeram",
   "license": "MIT",
   "devDependencies": {
     "@babel/eslint-parser": "^7.24.7",

@@ -3,5 +3,11 @@ const { eslint_config } = require( 'airier' )
 
 // Export the default eslint config
 module.exports = {
-    ...eslint_config
+    ...eslint_config,
+    settings: {
+        ...eslint_config.settings,
+        react: {
+            version: '18.0'
+        }
+    }
 }

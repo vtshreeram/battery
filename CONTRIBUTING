@@ -1,12 +1,60 @@
-Hello fellow dev 👋
+# Contributing to Battery
 
-I appreciate any time you are willing and able to put into making `battery` better.
+Thank you for contributing to `battery`! This project is maintained at [`vtshreeram/battery`](https://github.com/vtshreeram/battery).
 
-Contributions are welcome. Open a pull-request for any improvements or additions. It might take me a while to get to seeing it though, please contact me on Twitter if I'm being very slow (@actuallymentor).
+To ensure stability, safety, and reliability across Apple Silicon Macs, please follow these guidelines when submitting issues or pull requests.
 
-Some things to keep in mind:
+---
 
-- I do not monitor the issue anymore, it's too much
-- You ARE welcome to tag me in pull requests if you need help. I might respond slow, but I will see you
-- The CLI is the place for fancy new features. The GUI app is minimalistic on purpose.
-- Please please test any changes you make in great detail and add what and how you tested to the PR. It will make it much faster for me to check if everything is ready for shipping
+## 🏗 Architecture Overview
+
+* `battery.sh`: Primary Bash binary managing Apple Silicon SMC registers, LaunchAgent daemons, visudo entries, status CSV, and health diagnostics.
+* `setup.sh`: Automated installer provisioning `smc`, `battery`, launch agents, and sudoers permissions.
+* `update.sh`: Automated updater pulling releases and verifying scripts.
+* `app/`: Electron menu bar application:
+  * `app/main.js`: Electron lifecycle, tray icon management, IPC endpoints, and background polling loop.
+  * `app/modules/battery.js`: Bridge to the CLI with robust retries and explicit error parsing.
+  * `app/modules/state-machine.js`: Deterministic battery state computation.
+  * `app/modules/settings-store.js`: Versioned schema (`v1`) with automated migrations from legacy config files.
+  * `app/modules/diagnostics.js` & `app/modules/repair.js`: Self-repair engine and diagnostics checks.
+  * `app/modules/temporary-charge.js`: "Charge to 100% Once" and "Pause Protection" workflows.
+  * `app/modules/scheduler.js`: Travel Mode and scheduled departure charge planning.
+  * `app/modules/process-runner.js`: Safe child-process execution with path sandboxing and test mock injection.
+
+---
+
+## 📋 Mandatory Rules for Changes
+
+1. **Increment Version on CLI Changes**:
+   Any modification to `battery.sh` requires bumping `BATTERY_CLI_VERSION` at the top of `battery.sh`. The updater relies directly on this version check.
+2. **Synchronize Sudoers & SMC Commands**:
+   Any modification to `smc` invocations in `battery.sh` must be reflected in the `visudoconfig` variable in `battery.sh` AND added to `smc_commands` in `app/modules/battery.js`.
+3. **Hardware State Integrity**:
+   Never fabricate battery, charging, or health states. When hardware or CLI is unreachable, return explicit unavailable error structures rather than fallback estimates.
+4. **User Preference Integrity**:
+   Never silently alter, reset, or enable battery protection if the user has disabled it.
+5. **Privacy First**:
+   Do not introduce any telemetry, remote tracking, or third-party analytics endpoints.
+6. **Thermal Safety**:
+   Thermal monitoring must remain strictly informational and warning-only. Do not introduce automated charging cutoffs based on software temperature readings.
+
+---
+
+## 🧪 Quality Standards & Verification
+
+Before submitting any Pull Request, ensure that all static checks, tests, and builds pass cleanly:
+
+```bash
+# 1. ShellCheck (must pass with 0 errors and 0 warnings)
+shellcheck battery.sh setup.sh update.sh
+
+# 2. App Linting (check-only mode, 0 errors/warnings)
+cd app
+npm run lint:check
+
+# 3. Unit Tests (Node 20+ test runner, 100% pass rate)
+npm test
+
+# 4. Production Electron Build
+npm run build
+```

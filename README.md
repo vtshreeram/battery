@@ -1,168 +1,154 @@
-# Battery charge limiter for Apple Silicon Macbook devices
+# Battery Charge Limiter for Apple Silicon MacBooks
 
-<img width="300px" align="right" src="./screenshots/tray.png"/>This tool makes it possible to keep a chronically plugged in Apple Silicon Macbook at `80%` battery, since that will prolong the longevity of the battery. It is free and open-source and will remain that way.
+<img width="320px" align="right" src="./screenshots/tray.png" alt="Battery Menu Bar UI"/>
 
-> Want to know if this tool does anything or is just a placebo? Read [this excellent article](https://batteryuniversity.com/article/bu-808-how-to-prolong-lithium-based-batteries). TL;DR: keep your battery cool, keep it at 80% when plugged in, and discharge it as shallowly as feasible.
+A modern, robust battery-management tool for Apple Silicon (M1/M2/M3/M4) Macs. It enables you to cap battery charging to 80% (or any custom limit between 50% and 100%), keeping your battery cool and significantly extending lithium-ion cell longevity when chronically connected to power.
 
-### Requirements
+This repository is maintained at **[`vtshreeram/battery`](https://github.com/vtshreeram/battery)**.
 
-This is an app for Apple Silicon Macs. It will not work on Intel macs. Do you have an older Mac? Consider the free version of the [Al Dente](https://apphousekitchen.com/) software package. It is a good alternative and has a premium version with many more features.
-
-### Installation
-
-- Option 1: install the app through brew with `brew install battery`
-- Option 2: [download the app dmg version here](https://github.com/actuallymentor/battery/releases/)
-- Option 3: install ONLY the command line interface (see section below)
-
-When installing via brew or dmg, opening the macOS app is required to complete the installation.
-
-The first time you open the app, it will ask for your administator password so it can install the needed components. Please note that the app:
-
-- Discharges your battery until it reaches 80%, **even when plugged in**
-- Disables charging when your battery is above 80% charged
-- Enables charging when your battery is under 80% charged
-- Keeps the limit engaged even after rebooting
-- Keeps the limit engaged even after closing the tray app
-- Also automatically installs the `battery` command line tool. If you want a custom charging percentage, the CLI is the only way to do that.
-
-Do you have questions, comments, or feature requests? [Open an issue here](https://github.com/actuallymentor/battery/issues) or [Tweet at me](https://twitter.com/actuallymentor).
+> **Why limit charging?** Lithium-ion batteries degrade fastest when held at 100% state-of-charge under high ambient temperatures. Keeping battery levels around 70–80% when plugged into power reduces chemical stress and maintains long-term capacity. For technical details, see [Battery University BU-808](https://batteryuniversity.com/article/bu-808-how-to-prolong-lithium-based-batteries).
 
 ---
 
-## 🖥 Command-line version
+## ⚡ Key Features
 
-> If you don't know what a "command line" is, ignore this section. You don't need it.
+### 🛡️ Smart Battery Protection
+* **Reboot-Persistent Limiting**: Maintains charge levels (default 80%) across reboots and sleep/wake cycles using a lightweight macOS `LaunchAgent` daemon.
+* **Custom Thresholds & Presets**: Choose quick presets (80%, 75%, 70%, 60%, 50%) or set custom limits anywhere between 50% and 100%.
+* **Optional Force Discharge**: When plugged in with battery above the target limit, seamlessly discharges the battery down to the target before holding power adapter bypass.
+* **Non-Destructive Defaults**: If protection is disabled by the user, the app respects the choice and never silently forces it back on.
 
-The GUI app uses a command line tool under the hood. Installing the GUI automatically installs the CLI as well. You can also separately install the CLI.
+### 🚀 Flexible Overrides & Workflows
+* **Charge to 100% Once**: One-click top-up. The app charges to 100% and automatically restores your configured limit as soon as full charge is reached.
+* **Temporary Pause**: Pause battery limiting for 1 hour, 4 hours, until tomorrow morning (8:00 AM), or until power is unplugged.
+* **Travel Mode (Scheduled Departure)**: Set a departure time; the app dynamically calculates required charging lead-time and delivers a 100% charge right when you leave, automatically restoring protection afterwards.
+* **Battery Calibration Cycle**: 4-stage automated cycle (discharge to 15% -> charge to 100% -> hold for 1 hour -> restore limit) to recalibrate macOS battery capacity estimations.
 
-The CLI is used for managing the battery charging status for Apple Silicon Macbooks. Can be used to enable/disable the Macbook from charging the battery when plugged into power.
+### 📊 Local Health Diagnostics & Monitoring
+* **Battery Health & History**: Inspect real-time capacity percentage, cycle counts, manufacturing details, and historical capacity retention trends saved locally.
+* **Informational Thermal Monitoring**: Real-time battery temperature display and alerts (>40°C elevated, >45°C high).
+  > **Note on Thermal Safety**: Thermal alerts are strictly informational and advisory. The software does not execute automated charging cutoffs based on thermal thresholds, ensuring hardware safety remains governed by Apple's built-in SMC firmware.
+* **Local Usage Statistics**: Track protection uptime, cycle efficiency, and charging state distributions without any external servers.
+* **Smart Heuristic Recommendations**: On-device tips based on your actual charging patterns.
 
-### Installation
+### 🔒 Privacy & Architecture Hardening
+* **Zero Telemetry**: All third-party tracking, analytics endpoints (`unidentifiedanalytics`), and external telemetry have been completely removed.
+* **Sandboxed Path Resolution**: CLI invocations use strict, safe PATH environments (`/usr/bin:/bin:/usr/sbin:/sbin:/usr/local/bin:/usr/local/co.palokaj.battery`) preventing binary injection.
+* **Versioned Settings Schema**: Migration engine safely transforms legacy file-based configurations (`~/.battery/*.setting`) into a structured schema (`v1`) without data loss.
+* **Self-Repair Engine**: Integrated repair utility detects and repairs sudoers permissions, missing LaunchAgents, stale PID locks, and binary permissions with one click.
 
-One-line installation:
+---
+
+## 📥 Installation
+
+### Requirements
+* Apple Silicon MacBook (M1, M2, M3, M4 or newer). Intel MacBooks are not supported.
+* macOS 12 Monterey, macOS 13 Ventura, macOS 14 Sonoma, or macOS 15 Sequoia.
+
+### Option 1: One-Line Installer (CLI + Menu Bar App)
+Run the following in your Terminal:
 
 ```bash
-curl -s https://raw.githubusercontent.com/actuallymentor/battery/main/setup.sh | bash
+curl -s https://raw.githubusercontent.com/vtshreeram/battery/main/setup.sh | bash
 ```
 
-This will:
+The installer will:
+1. Install Apple Silicon `smc` tool to `/usr/local/bin`
+2. Install `battery` CLI to `/usr/local/bin` and `/usr/local/co.palokaj.battery`
+3. Configure passwordless `sudo` rights for `smc` commands via `/etc/sudoers.d/battery`
+4. Register the background maintenance `LaunchAgent` daemon (`~/Library/LaunchAgents/battery.plist`)
+5. Download and place the Electron menu bar app in `/Applications/battery.app`
 
-1. Download the precompiled `smc` tool in this repo (built from the [hholtmann/smcFanControl](https://github.com/hholtmann/smcFanControl.git) repository)
-2. Install `smc` to `/usr/local/bin`
-3. Install `battery` to `/usr/local/bin`
+### Option 2: Precompiled DMG Release
+Download the latest `.dmg` from the [Releases page](https://github.com/vtshreeram/battery/releases), open it, and drag `battery.app` to `/Applications`. Launch the application to finalize setup.
 
-### Usage
+---
 
-Example usage:
+## 🖥️ Command Line Interface (CLI)
 
-```shell
-# This will enable charging when your battery dips under 80, and disable it when it exceeds 80
+The GUI wraps around `battery.sh`, which can be run independently in terminal:
+
+```bash
+# Maintain battery level at 80% (reboot-persistent)
 battery maintain 80
 
-# This will maintain your battery between 70-80%, letting it rest in that range
+# Maintain battery level with forced discharge down to target
+battery maintain 80 --force-discharge
+
+# Maintain battery within a window (e.g. 70% to 80%)
 battery maintain 70-80
+
+# Stop maintenance (disable limiter)
+battery maintain stop
+
+# Inspect battery status in human-readable or CSV format
+battery status
+battery status_csv
+
+# Inspect battery hardware health and capacity
+battery health
+
+# Run full battery calibration cycle
+battery calibrate
+
+# Enable or disable charging directly via SMC
+battery charging off
+battery charging on
+
+# Disconnect power adapter input
+battery adapter off
+battery adapter on
+
+# Self-repair permissions and launch daemons
+battery repair
 ```
 
-After running a command like `battery charging off` you can verify the change visually by looking at the battery icon:
+---
 
-![Battery not charging](./screenshots/not-charging-screenshot.png)
+## ⚙️ Settings & Configuration
 
-After running `battery charging on` you will see it change to this:
+Access preferences by clicking the menu bar icon and selecting **Settings...**:
+* **Target Charge Limit**: Set limit between 50% and 100%.
+* **Force Discharge**: Toggle whether battery discharges when plugged in above target.
+* **Menu Bar Display Style**: Choose between percentage text badge (`80%`) or clean icon display.
+* **Granular Notifications**: Toggle specific alerts (Protection activated, Target reached, Low battery, Full charge completed, Pause ending, Temperature warning).
+* **Diagnostics & Logs**: View live sanitized logs, run system health checks, or export diagnostic reports.
 
-![Battery charging](./screenshots/charging-screenshot.png)
+---
 
-For help, run `battery` without parameters:
+## 🛠️ Development & Contributing
 
-```
-Battery CLI utility v1.0.1
+Contributions are welcome! Please ensure all code meets repository standards before submitting pull requests.
 
-Usage:
+### Prerequisites
+* Node.js v20+
+* ShellCheck (`brew install shellcheck`)
 
-  battery status
-    output battery SMC status, % and time remaining
+### Setup & Testing
+```bash
+# Clone the repository
+git clone https://github.com/vtshreeram/battery.git
+cd battery
 
-  battery maintain LEVEL[1-100,stop] or RANGE[lower-upper]
-    reboot-persistent battery level maintenance: turn off charging above, and on below a certain value
-    eg: battery maintain 80           # maintain at 80%
-    eg: battery maintain 70-80        # maintain between 70-80%
-    eg: battery maintain stop
+# Validate shell scripts
+shellcheck battery.sh setup.sh update.sh
 
-  battery charging SETTING[on/off]
-    manually set the battery to (not) charge
-    eg: battery charging on
+# Install app dependencies
+cd app
+npm install
 
-  battery adapter SETTING[on/off]
-    manually set the adapter to (not) charge even when plugged in
-    eg: battery adapter off
+# Run static linting (check-only mode)
+npm run lint:check
 
-  battery calibrate
-    calibrate the battery by discharging it to 15%, then recharging it to 100%, and keeping it there for 1 hour
+# Run automated test suite (mocked hardware, zero hardware mutation)
+npm test
 
-  battery charge LEVEL[1-100]
-    charge the battery to a certain percentage, and disable charging when that percentage is reached
-    eg: battery charge 90
-
-  battery discharge LEVEL[1-100]
-    block power input from the adapter until battery falls to this level
-    eg: battery discharge 90
-
-  battery visudo
-    ensure you don't need to call battery with sudo
-    This is already used in the setup script, so you should't need it.
-
-  battery update
-    update the battery utility to the latest version
-
-  battery reinstall
-    reinstall the battery utility to the latest version (reruns the installation script)
-
-  battery uninstall
-    enable charging, remove the smc tool, and the battery script
+# Build production Electron release (macOS arm64)
+npm run build
 ```
 
-## FAQ & Troubleshooting
+---
 
-### Why does this exist?
+## 📄 License
 
-I was looking at the Al Dente software package for battery limiting, but I found the [license too limiting](https://github.com/davidwernhart/AlDente/discussions/558) for a poweruser like myself.
-
-I would actually have preferred using Al Dente, but decided to create a command-line utility to replace it as a side-project on holiday. A colleague mentioned they would like a GUI, so I spend a few evenings setting up an Electron app. And voila, here we are.
-
-### "It's not working"
-
-If you used one of the earlier versions of the `battery` utility, you may run into [path/permission issues](https://github.com/actuallymentor/battery/issues/8). This is not your fault but mine. To fix it:
-
-```
-sudo rm -rf ~/.battery
-binfolder=/usr/local/bin
-sudo rm -v "$binfolder/smc" "$binfolder/battery"
-```
-
-Then reopen the app and things should work. If not, [open an issue](https://github.com/actuallymentor/battery/issues/new/choose) and I'll try to help you fix it.
-
-### A note to Little Snitch users
-
-This tool calls a number of urls, blocking all of them will only break auto-updates.
-
-1. `unidentifiedanalytics.web.app` is a self-made app that tracks app installations, I use it to see if enough people use the app to justify spending time on it. It tracks only how many unique ip addresses open the app.
-1. `icanhazip.com` is used to see if there is an internet connection
-1. `github.com` is used both as a liveness check and as the source of updates for the underlying command-line utility
-1. `electronjs.org` hosts the update server for the GUI
-
-All urls are called over `https` and so not leak data. Unidentified Analytics keeps track of unique ip addresses that open the app, but nothing else.
-
-### What distinguishes this project from Optimized Charging?
-
-Optimized Charging, a feature that is built into MacOS, aims to ensure the longevity and health of your battery. It does so by "delaying charging the battery past 80% when it predicts that you’ll be plugged in for an extended period of time, and aims to charge the battery before you unplug," as explained in [Apple's user guide](https://support.apple.com/en-ca/guide/mac-help/mchlfc3b7879/mac#:~:text=Optimized%20Battery%20Charging%3A%20To%20reduce,the%20battery%20before%20you%20unplug.).
-
-Additionally, Optimized Charging uses machine learning to decide when the battery should be held at 80%, and when it should become fully charged. If your Mac is not plugged in on a regular schedule, optimized charging will not work as intended.
-
-This app is a similar alternative to Optimized Charging, giving the user control over when it is activated, what percentage the battery should be held at, and more.
-
-### How do I support this project?
-
-Do you know how to code? Open a pull-request for a feature with the label [help wanted (PR welcome)](https://github.com/actuallymentor/battery/labels/help%20wanted%20%28PR%20welcome%29).
-
-Do you have an awesome feature idea? [Add a feature request](https://github.com/actuallymentor/battery/issues/new/choose)
-
-Do you just want to keep me motivated to update the app? [Tweet at me](https://twitter.com/actuallymentor)
+This project is open source and available under the [MIT License](LICENSE).

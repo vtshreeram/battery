@@ -9,7 +9,7 @@ assignees: ''
 
 **Did you check that your issue is not already reported?**
 
-- [ ] I opened the [issues tab](https://github.com/actuallymentor/battery/issues)
+- [ ] I opened the [issues tab](https://github.com/vtshreeram/battery/issues)
 - [ ] I used the search bar to check if the issue was already reported
 - [ ] There is no issue that reports what I observed
 
