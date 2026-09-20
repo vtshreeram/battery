@@ -98,17 +98,17 @@ const get_icon_style_setting = () => {
     return get_setting( 'display_style', 'text' )
 }
 
-const toggle_icon_style_setting = () => {
-    const current = get_icon_style_setting()
-    const new_val = current === 'text' ? 'icon' : 'text'
-    return set_icon_style_setting( new_val )
-}
-
 const set_icon_style_setting = ( style ) => {
     const new_val = style === 'text' ? 'text' : 'icon'
     set_setting( 'display_style', new_val )
     log( `[Settings] Setting icon style to: ${ new_val }` )
     return new_val
+}
+
+const toggle_icon_style_setting = () => {
+    const current = get_icon_style_setting()
+    const new_val = current === 'text' ? 'icon' : 'text'
+    return set_icon_style_setting( new_val )
 }
 
 const get_protection_mode = () => {

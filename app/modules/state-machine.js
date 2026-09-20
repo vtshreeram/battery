@@ -103,7 +103,7 @@ const resolve_battery_state = ( {
     const force_discharge = Boolean( status.discharging ) && ac_attached === true
     const inferred_force_discharge = Boolean( status.discharging ) && !on_battery && ac_attached !== false
 
-    if( physically_unplugged || ( on_battery && !force_discharge ) ) {
+    if( physically_unplugged || on_battery && !force_discharge ) {
         return {
             state: ProtectionState.ON_BATTERY,
             label: 'Running on Battery',
