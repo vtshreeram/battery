@@ -20,7 +20,9 @@ const {
     get_protection_mode,
     set_protection_mode,
     get_temporary_workflow,
-    get_travel_mode
+    get_travel_mode,
+    get_power_source_preference,
+    set_power_source_preference
 } = require( './settings' )
 const { resolve_battery_state, pick_status_for_display } = require( './state-machine' )
 const { evaluate_power_notifications } = require( './notifications' )
@@ -219,6 +221,8 @@ const generate_app_menu = async () => {
         const current_limit = get_charge_limit()
         const startup_enabled = await is_startup_enabled()
         const health = await get_battery_health()
+        const power_pref = get_power_source_preference()
+        const is_manual_battery = (!ac_attached) || (power_pref === 'battery') || (Boolean(status.discharging) && !limiter_on)
 
         // Extract raw temperature if available
         let temp_c = null
@@ -347,10 +351,11 @@ const generate_app_menu = async () => {
             {
                 label: 'Power Adapter',
                 type: 'radio',
-                checked: ac_attached && !status.discharging,
+                checked: ac_attached && !is_manual_battery,
                 enabled: ac_attached,
                 click: async () => {
                     log( '[Interface] Selected Power Adapter' )
+                    set_power_source_preference( 'adapter' )
                     await switch_to_power()
                     await refresh_tray()
                 }
@@ -358,9 +363,10 @@ const generate_app_menu = async () => {
             {
                 label: 'Battery Power',
                 type: 'radio',
-                checked: !ac_attached || status.discharging,
+                checked: is_manual_battery,
                 click: async () => {
                     log( '[Interface] Selected Battery Power' )
+                    set_power_source_preference( 'battery' )
                     await switch_to_battery()
                     await refresh_tray()
                 }

@@ -170,6 +170,16 @@ const set_startup_setting = ( enabled ) => {
     return set_setting( 'launch_at_login', Boolean( enabled ) )
 }
 
+const get_power_source_preference = () => {
+    return get_setting( 'power_source_mode', 'adapter' )
+}
+
+const set_power_source_preference = ( mode ) => {
+    const valid = mode === 'battery' ? 'battery' : 'adapter'
+    log( `[Settings] Setting power source preference: ${ valid }` )
+    return set_setting( 'power_source_mode', valid )
+}
+
 const toggle_startup_setting = () => {
     const current = get_startup_setting()
     return set_startup_setting( !current )
@@ -195,6 +205,8 @@ module.exports = {
     get_startup_setting,
     set_startup_setting,
     toggle_startup_setting,
+    get_power_source_preference,
+    set_power_source_preference,
     get_protection_mode,
     set_protection_mode,
     get_charge_limit,

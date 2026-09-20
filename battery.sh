@@ -4,7 +4,7 @@
 ## Update management
 ## variables are used by this binary as well at the update script
 ## ###############
-BATTERY_CLI_VERSION="v1.3.8"
+BATTERY_CLI_VERSION="v1.4.0"
 
 # If a script may run as root:
 #   - Reset PATH to safe defaults at the very beginning of the script.
@@ -159,8 +159,8 @@ ALL ALL = NOPASSWD: $battery_binary update_silent
 ALL ALL = NOPASSWD: $battery_binary update_silent is_enabled
 
 # Allow passwordless battery-charging–related SMC write commands
-Cmnd_Alias    CHARGING_OFF = $smc_binary -k CH0B -w 02, $smc_binary -k CH0C -w 02, $smc_binary -k CHTE -w 01000000
-Cmnd_Alias    CHARGING_ON = $smc_binary -k CH0B -w 00, $smc_binary -k CH0C -w 00, $smc_binary -k CHTE -w 00000000
+Cmnd_Alias    CHARGING_OFF = $smc_binary -k CH0B -w 02, $smc_binary -k CH0C -w 02, $smc_binary -k CHTE -w 01000000, $smc_binary -k CH0J -w 01
+Cmnd_Alias    CHARGING_ON = $smc_binary -k CH0B -w 00, $smc_binary -k CH0C -w 00, $smc_binary -k CHTE -w 00000000, $smc_binary -k CH0J -w 00
 Cmnd_Alias    FORCE_DISCHARGE_OFF = $smc_binary -k CH0I -w 00, $smc_binary -k CHIE -w 00, $smc_binary -k CH0J -w 00
 Cmnd_Alias    FORCE_DISCHARGE_ON = $smc_binary -k CH0I -w 01, $smc_binary -k CHIE -w 08, $smc_binary -k CH0J -w 01
 Cmnd_Alias    LED_CONTROL = $smc_binary -k ACLC -w 04, $smc_binary -k ACLC -w 03, $smc_binary -k ACLC -w 02, $smc_binary -k ACLC -w 01, $smc_binary -k ACLC -w 00
@@ -173,7 +173,7 @@ ALL ALL = NOPASSWD: LED_CONTROL
 # Temporarily keep passwordless SMC reading commands so the old menubar GUI versions don't ask for password on each launch
 # trying to execute 'battery visudo'. There is no harm in removing this, so do it as soon as you believe users are no
 # longer using old versions.
-ALL ALL = NOPASSWD: $smc_binary -k CH0C -r, $smc_binary -k CH0I -r, $smc_binary -k ACLC -r, $smc_binary -k CHIE -r, $smc_binary -k CHTE -r
+ALL ALL = NOPASSWD: $smc_binary -k CH0C -r, $smc_binary -k CH0I -r, $smc_binary -k ACLC -r, $smc_binary -k CHIE -r, $smc_binary -k CHTE -r, $smc_binary -k CH0J -r
 "
 
 # Get parameters
@@ -331,11 +331,11 @@ function change_magsafe_led_color() {
 # Re:discharging, we're using keys uncovered by @howie65: https://github.com/actuallymentor/battery/issues/20#issuecomment-1364540704
 # CH0I seems to be the "disable the adapter" key
 function enable_discharging() {
-	log "🔽🪫 Enabling battery discharging"
-	if [[ "$smc_supports_adapter_chie" == "true" ]]; then
-		smc_write_hex CHIE 08
-	elif [[ "$smc_supports_adapter_ch0j" == "true" ]]; then
+	log "🔽🔋 Enabling battery discharging"
+	if [[ "$smc_supports_adapter_ch0j" == "true" ]]; then
 		smc_write_hex CH0J 01
+	elif [[ "$smc_supports_adapter_chie" == "true" ]]; then
+		smc_write_hex CHIE 08
 	else
 		smc_write_hex CH0I 01
 	fi
@@ -344,10 +344,10 @@ function enable_discharging() {
 
 function disable_discharging() {
 	log "🔼🪫 Disabling battery discharging"
-	if [[ "$smc_supports_adapter_chie" == "true" ]]; then
-		smc_write_hex CHIE 00
-	elif [[ "$smc_supports_adapter_ch0j" == "true" ]]; then
+	if [[ "$smc_supports_adapter_ch0j" == "true" ]]; then
 		smc_write_hex CH0J 00
+	elif [[ "$smc_supports_adapter_chie" == "true" ]]; then
+		smc_write_hex CHIE 00
 	elif [[ "$smc_supports_adapter_ch0i" == "true" ]]; then
 		smc_write_hex CH0I 00
 	else
@@ -365,6 +365,8 @@ function disable_discharging() {
 		elif [[ "$smc_supports_legacy" == "true" ]]; then
 			smc_write_hex CH0B 00
 			smc_write_hex CH0C 00
+		elif [[ "$smc_supports_adapter_ch0j" == "true" ]]; then
+			smc_write_hex CH0J 00
 		else
 			log "⚠️ Unable to reset charging state"
 		fi
@@ -385,6 +387,8 @@ function disable_discharging() {
 		elif [[ "$smc_supports_legacy" == "true" ]]; then
 			smc_write_hex CH0B 00
 			smc_write_hex CH0C 00
+		elif [[ "$smc_supports_adapter_ch0j" == "true" ]]; then
+			smc_write_hex CH0J 00
 		else
 			log "⚠️ Unable to reset charging state"
 		fi
@@ -405,6 +409,8 @@ function enable_charging() {
 	elif [[ "$smc_supports_legacy" == "true" ]]; then
 		smc_write_hex CH0B 00
 		smc_write_hex CH0C 00
+	elif [[ "$smc_supports_adapter_ch0j" == "true" ]]; then
+		smc_write_hex CH0J 00
 	else
 		log "⚠️ Unable to determine SMC keys for enabling charging"
 	fi
@@ -418,6 +424,8 @@ function disable_charging() {
 	elif [[ "$smc_supports_legacy" == "true" ]]; then
 		smc_write_hex CH0B 02
 		smc_write_hex CH0C 02
+	elif [[ "$smc_supports_adapter_ch0j" == "true" ]]; then
+		smc_write_hex CH0J 01
 	else
 		log "⚠️ Unable to determine SMC keys for disabling charging"
 	fi
@@ -427,6 +435,10 @@ function get_smc_charging_status() {
 	local status_key="CH0B"
 	if [[ "$smc_supports_tahoe" == "true" ]]; then
 		status_key="CHTE"
+	elif [[ "$smc_supports_legacy" == "true" ]]; then
+		status_key="CH0B"
+	elif [[ "$smc_supports_adapter_ch0j" == "true" ]]; then
+		status_key="CH0J"
 	fi
 	hex_status=$(smc_read_hex "$status_key")
 	if [[ -z "$hex_status" ]]; then
@@ -439,19 +451,27 @@ function get_smc_charging_status() {
 		else
 			echo "disabled"
 		fi
-	elif [[ "$hex_status" == "00" ]]; then
-		echo "enabled"
-	else
-		echo "disabled"
+	elif [[ "$smc_supports_legacy" == "true" ]]; then
+		if [[ "$hex_status" == "00" ]]; then
+			echo "enabled"
+		else
+			echo "disabled"
+		fi
+	elif [[ "$smc_supports_adapter_ch0j" == "true" ]]; then
+		if [[ "$hex_status" == "00" || "$hex_status" == "0" ]]; then
+			echo "enabled"
+		else
+			echo "disabled"
+		fi
 	fi
 }
 
 function get_smc_discharging_status() {
 	local status_key="CH0I"
-	if [[ "$smc_supports_adapter_chie" == "true" ]]; then
-		status_key="CHIE"
-	elif [[ "$smc_supports_adapter_ch0j" == "true" ]]; then
+	if [[ "$smc_supports_adapter_ch0j" == "true" ]]; then
 		status_key="CH0J"
+	elif [[ "$smc_supports_adapter_chie" == "true" ]]; then
+		status_key="CHIE"
 	fi
 	hex_status=$(smc_read_hex "$status_key")
 	if [[ -z "$hex_status" ]]; then
@@ -599,12 +619,25 @@ function is_latest_version_installed() {
 	# Check if content is reachable first with HEAD request
 	curl -sSI "$github_url_battery_sh" &>/dev/null || return 0
 
-	# Download the remote script then check if our version string is present.
-	# Note: piping curl directly into grep -q causes a broken-pipe error (curl error 56)
-	# because grep -q exits on first match while curl is still writing.
+	# Download the remote script then parse and compare the version string
 	local remote_script
 	remote_script="$(curl -sS "$github_url_battery_sh" 2>/dev/null)"
-	echo "$remote_script" | grep -q "$BATTERY_CLI_VERSION"
+	local remote_version
+	remote_version="$(echo "$remote_script" | grep -E '^BATTERY_CLI_VERSION=' | head -n 1 | cut -d'"' -f2)"
+	if [[ -z "$remote_version" ]]; then
+		return 0
+	fi
+
+	# Compare versions: if local version is >= remote version, it is up-to-date
+	local lowest_version
+	lowest_version="$(printf '%s\n%s\n' "$BATTERY_CLI_VERSION" "$remote_version" | sort -V | head -n 1)"
+	if [[ "$lowest_version" == "$remote_version" ]]; then
+		# Local version is equal to or newer than remote
+		return 0
+	else
+		# Remote version is newer than local
+		return 1
+	fi
 }
 
 ## ###############
@@ -1001,6 +1034,8 @@ if [[ "$action" == "maintain_synchronous" ]]; then
 		exit 1
 	fi
 
+	echo $$ > "$pidfile"
+
 	# Check if the user requested that the battery maintenance first discharge to the desired level
 	if [[ "$subsetting" == "--force-discharge" ]]; then
 		# Before we start maintaining the battery level, first discharge to the target level
@@ -1035,7 +1070,7 @@ if [[ "$action" == "maintain_synchronous" ]]; then
 		if [[ "$battery_percentage" -ge "$upper_bound" && ("$is_charging" == "enabled" || "$ac_attached" == "1") ]]; then
 
 			log "Charge at or above $upper_bound%"
-			if [[ "$is_charging" == "enabled" ]]; then
+			if [[ "$is_charging" != "disabled" ]]; then
 				disable_charging
 			fi
 			change_magsafe_led_color "green"
@@ -1108,6 +1143,8 @@ if [[ "$action" == "maintain_voltage_synchronous" ]]; then
 	upper_voltage=$(echo "$setting + $subsetting" | bc -l)
 	log "Keeping voltage between ${lower_voltage}V and ${upper_voltage}V"
 
+	echo $$ > "$pidfile"
+
 	# Loop
 	while true; do
 		is_charging=$(get_smc_charging_status)
@@ -1138,12 +1175,16 @@ if [[ "$action" == "maintain" ]]; then
 
 	disable_discharging
 
-	# Kill old process silently
+	# Kill old maintain processes
 	if test -f "$pidfile"; then
-		log "Killing old maintain process at $(cat "$pidfile")"
+		log "Killing old maintain process at $(cat "$pidfile" 2>/dev/null)"
 		pid=$(cat "$pidfile" 2>/dev/null)
 		kill "$pid" &>/dev/null
+		rm -f "$pidfile" 2>/dev/null
 	fi
+	pgrep -f "battery maintain_.*synchronous" 2>/dev/null | grep -v "^$$$" | while read -r p; do
+		kill "$p" &>/dev/null
+	done
 
 	if test -f "$calibrate_pidfile"; then
 		pid=$(cat "$calibrate_pidfile" 2>/dev/null)
@@ -1153,7 +1194,14 @@ if [[ "$action" == "maintain" ]]; then
 
 	if [[ "$setting" == "stop" ]]; then
 		log "Killing running maintain daemons & enabling charging as default state"
-		rm "$pidfile" 2>/dev/null
+		if test -f "$pidfile"; then
+			pid=$(cat "$pidfile" 2>/dev/null)
+			kill "$pid" &>/dev/null
+			rm -f "$pidfile" 2>/dev/null
+		fi
+		pgrep -f "battery maintain_.*synchronous" 2>/dev/null | grep -v "^$$$" | while read -r p; do
+			kill "$p" &>/dev/null
+		done
 		$battery_binary disable_daemon
 		enable_charging
 		$battery_binary status
@@ -1282,7 +1330,14 @@ fi
 if [[ "$action" == "status" ]]; then
 
 	log "Battery at $(get_battery_percentage)% ($(get_remaining_time) remaining), $(get_voltage)V, smc charging $(get_smc_charging_status)"
-	if test -f "$pidfile"; then
+	maintain_running=false
+	if test -f "$pidfile" && kill -0 "$(cat "$pidfile" 2>/dev/null)" 2>/dev/null; then
+		maintain_running=true
+	elif pgrep -f "battery maintain_synchronous" &>/dev/null || pgrep -f "battery maintain_voltage_synchronous" &>/dev/null; then
+		maintain_running=true
+	fi
+
+	if [ "$maintain_running" = true ]; then
 		maintain_percentage=$(cat "$maintain_percentage_tracker_file" 2>/dev/null)
 		if [[ -n "$maintain_percentage" ]]; then
 			if valid_percentage_range "$maintain_percentage"; then
