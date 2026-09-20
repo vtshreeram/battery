@@ -18,6 +18,7 @@
         "**/*"
       ]
     },
+    "afterPack": "./build_hooks/afterPack.js",
     "afterSign": "./build_hooks/afterSign.js",
     "mac": {
       "hardenedRuntime": true,

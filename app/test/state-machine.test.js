@@ -1,6 +1,6 @@
 const test = require( 'node:test' )
 const assert = require( 'node:assert/strict' )
-const { resolve_battery_state, ProtectionState } = require( '../modules/state-machine' )
+const { resolve_battery_state, ProtectionState, pick_status_for_display } = require( '../modules/state-machine' )
 
 test( 'State Machine - Unavailable when status is unavailable', () => {
     const res = resolve_battery_state( {
@@ -8,7 +8,7 @@ test( 'State Machine - Unavailable when status is unavailable', () => {
         limiter_enabled: true
     } )
     assert.equal( res.state, ProtectionState.UNAVAILABLE )
-    assert.equal( res.iconState, 'battery' )
+    assert.equal( res.iconState, 'unplugged' )
 } )
 
 test( 'State Machine - Calibrating when calibration_active is true', () => {
@@ -64,7 +64,31 @@ test( 'State Machine - Force discharging state', () => {
         on_battery: false
     } )
     assert.equal( res.state, ProtectionState.FORCE_DISCHARGING )
-    assert.equal( res.iconState, 'battery' )
+    assert.equal( res.iconState, 'unplugged' )
+    assert.match( res.label, /Discharging to 80%/ )
+} )
+
+test( 'State Machine - Adapter connected plus SMC discharge is force-discharge', () => {
+    const res = resolve_battery_state( {
+        status: { available: true, percentage: 90, discharging: true, maintain_percentage: 80 },
+        limiter_enabled: true,
+        on_battery: true,
+        ac_attached: true
+    } )
+    assert.equal( res.state, ProtectionState.FORCE_DISCHARGING )
+    assert.equal( res.iconState, 'unplugged' )
+} )
+
+test( 'State Machine - Unplugged discharge is running on battery, not force-discharge', () => {
+    const res = resolve_battery_state( {
+        status: { available: true, percentage: 97, discharging: true, maintain_percentage: 85 },
+        limiter_enabled: true,
+        on_battery: true,
+        ac_attached: false
+    } )
+    assert.equal( res.state, ProtectionState.ON_BATTERY )
+    assert.equal( res.label, 'Running on Battery' )
+    assert.equal( res.iconState, 'unplugged' )
 } )
 
 test( 'State Machine - Running on battery', () => {
@@ -74,7 +98,20 @@ test( 'State Machine - Running on battery', () => {
         on_battery: true
     } )
     assert.equal( res.state, ProtectionState.ON_BATTERY )
-    assert.equal( res.iconState, 'battery' )
+    assert.equal( res.iconState, 'unplugged' )
+} )
+
+test( 'pick_status_for_display keeps last good reading on a failed poll', () => {
+    const last_good = { available: true, percentage: 97 }
+    const picked = pick_status_for_display( { available: false, errorCode: 'STATUS_ERROR' }, last_good )
+    assert.equal( picked.stale, true )
+    assert.equal( picked.status.percentage, 97 )
+} )
+
+test( 'pick_status_for_display uses a fresh successful poll', () => {
+    const picked = pick_status_for_display( { available: true, percentage: 80 }, { available: true, percentage: 97 } )
+    assert.equal( picked.stale, false )
+    assert.equal( picked.status.percentage, 80 )
 } )
 
 test( 'State Machine - Explicitly disabled protection mode', () => {

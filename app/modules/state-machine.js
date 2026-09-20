@@ -22,6 +22,7 @@ const ProtectionState = Object.freeze( {
  * @param {boolean} params.limiter_enabled - Whether CLI limiter is active
  * @param {string} params.protection_mode - 'enabled' | 'disabled'
  * @param {boolean} params.on_battery - Whether power source is battery
+ * @param {boolean|null} params.ac_attached - Whether the power adapter is physically connected
  * @param {object|null} params.temporary_workflow - Active temporary workflow ({ type: 'full_charge' | 'pause' })
  * @param {boolean} params.calibration_active - Whether calibration is actively running
  * @param {number|null} params.temperature_c - Current battery temperature in Celsius
@@ -32,6 +33,7 @@ const resolve_battery_state = ( {
     limiter_enabled,
     protection_mode = 'enabled',
     on_battery = false,
+    ac_attached = null,
     temporary_workflow = null,
     calibration_active = false,
     temperature_c = null
@@ -41,7 +43,7 @@ const resolve_battery_state = ( {
         return {
             state: ProtectionState.UNAVAILABLE,
             label: 'Battery status unavailable',
-            iconState: 'battery'
+            iconState: 'unplugged'
         }
     }
 
@@ -60,7 +62,7 @@ const resolve_battery_state = ( {
             return {
                 state: ProtectionState.ON_BATTERY,
                 label: 'Charge to 100% paused (running on battery)',
-                iconState: 'battery'
+                iconState: 'unplugged'
             }
         }
         if( status.percentage >= 100 ) {
@@ -82,7 +84,7 @@ const resolve_battery_state = ( {
         return {
             state: ProtectionState.PAUSED,
             label: 'Protection temporarily paused',
-            iconState: on_battery ? 'battery' : 'charging'
+            iconState: on_battery ? 'unplugged' : 'charging'
         }
     }
 
@@ -91,23 +93,29 @@ const resolve_battery_state = ( {
         return {
             state: ProtectionState.TEMP_WARNING,
             label: `High battery temperature (${ temperature_c }°C)`,
-            iconState: on_battery ? 'battery' :  limiter_enabled ? 'protected' : 'charging' 
+            iconState: on_battery ? 'unplugged' :  limiter_enabled ? 'protected' : 'charging'
         }
     }
 
-    // 6. Running on battery (unplugged or forced discharge)
-    if( on_battery || status.discharging ) {
-        if( status.discharging ) {
-            return {
-                state: ProtectionState.FORCE_DISCHARGING,
-                label: `Discharging to ${ status.maintain_percentage || 80 }%`,
-                iconState: 'battery'
-            }
-        }
+    // 6. Running on battery vs force-discharge while the adapter is still plugged in.
+    // Natural unplug must never be labelled as "Discharging to X%".
+    const physically_unplugged = ac_attached === false
+    const force_discharge = Boolean( status.discharging ) && ac_attached === true
+    const inferred_force_discharge = Boolean( status.discharging ) && !on_battery && ac_attached !== false
+
+    if( physically_unplugged ||  on_battery && !force_discharge  ) {
         return {
             state: ProtectionState.ON_BATTERY,
             label: 'Running on Battery',
-            iconState: 'battery'
+            iconState: 'unplugged'
+        }
+    }
+
+    if( force_discharge || inferred_force_discharge ) {
+        return {
+            state: ProtectionState.FORCE_DISCHARGING,
+            label: `Discharging to ${ status.maintain_percentage || 80 }%`,
+            iconState: 'unplugged'
         }
     }
 
@@ -116,7 +124,7 @@ const resolve_battery_state = ( {
         return {
             state: ProtectionState.DISABLED,
             label: status.charging ? 'Charging (Limiter disabled)' : 'Limiter disabled',
-            iconState: status.charging ? 'charging' : 'battery'
+            iconState: status.charging ? 'charging' : 'unplugged'
         }
     }
 
@@ -147,7 +155,22 @@ const resolve_battery_state = ( {
     }
 }
 
+/**
+ * Keep the last good hardware reading when a poll fails.
+ * Prevents the tray from flashing "status unavailable" during a blip.
+ */
+const pick_status_for_display = ( fresh, last_good ) => {
+    if( fresh && fresh.available ) {
+        return { status: fresh, stale: false }
+    }
+    if( last_good && last_good.available ) {
+        return { status: last_good, stale: true }
+    }
+    return { status: fresh || { available: false }, stale: false }
+}
+
 module.exports = {
     ProtectionState,
-    resolve_battery_state
+    resolve_battery_state,
+    pick_status_for_display
 }

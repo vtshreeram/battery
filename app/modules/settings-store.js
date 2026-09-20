@@ -15,6 +15,7 @@ const DEFAULT_SETTINGS = {
     protection_mode: 'enabled', // 'enabled' | 'disabled'
     charge_limit: 80,
     force_discharge: false,
+    display_style: 'text',
     master_notifications: true,
     notification_sound: true, // play sound for notifications
     notification_alert_style: 'banners', // 'none' | 'banners' | 'alerts'

@@ -94,7 +94,7 @@ const get_battery_status = async ( retries = 2 ) => {
         const result = await exec_async( `${ battery } status_csv`, 3000 )
         const parsed = parse_status_csv( result.stdout )
         if( parsed.available ) {
-            log( '[Battery] Status parsed: ', JSON.stringify( parsed ) )
+            log( `[Battery] Status ${ parsed.percentage }% charging=${ parsed.charging } discharging=${ parsed.discharging } maintain=${ parsed.maintain_percentage }` )
             return parsed
         }
         throw new Error( parsed.errorMessage || 'Invalid status output from CLI' )
@@ -267,8 +267,13 @@ const initialize_battery = async () => {
         log( `[Battery] Startup state: persisted mode='${ mode }', target=${ target_limit }%, currently_maintaining=${ currently_maintaining }` )
 
         if( mode === 'enabled' ) {
+            const live_status = currently_maintaining ? await get_battery_status() : null
+            const live_limit = live_status?.maintain_percentage
             if( !currently_maintaining ) {
                 log( `[Battery] Protection mode is 'enabled' but daemon was inactive. Restoring maintenance at ${ target_limit }%` )
+                await enable_battery_limiter( target_limit )
+            } else if( live_limit && live_limit !== target_limit ) {
+                log( `[Battery] Live maintain ${ live_limit }% differs from saved limit ${ target_limit }%. Re-applying saved limit.` )
                 await enable_battery_limiter( target_limit )
             }
         } else {

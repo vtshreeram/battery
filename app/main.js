@@ -1,6 +1,11 @@
 const { app } = require( 'electron' )
-const { alert, log } = require( './modules/helpers' )
-const { set_initial_interface } = require( './modules/interface' )
+const { log } = require( './modules/helpers' )
+const { set_initial_interface, refresh_tray } = require( './modules/interface' )
+
+const got_lock = app.requestSingleInstanceLock()
+if( !got_lock ) {
+    app.quit()
+}
 
 // Enable auto-updates
 require( 'update-electron-app' )( {
@@ -22,30 +27,12 @@ process.on( 'unhandledRejection', ( reason ) => {
     log( 'Unhandled Rejection in main: ', reason )
 } )
 
-/* ///////////////////////////////
-// Event listeners
-// /////////////////////////////*/
-
-app.whenReady().then( set_initial_interface )
-
-/* ///////////////////////////////
-// Global config
-// /////////////////////////////*/
+if( got_lock ) {
+    app.on( 'second-instance', () => {
+        refresh_tray()
+    } )
+    app.whenReady().then( set_initial_interface )
+}
 
 // Hide dock entry
 if( app.dock ) app.dock.hide()
-
-/* ///////////////////////////////
-// Debugging
-// /////////////////////////////*/
-const debug = false
-if( debug ) app.whenReady().then( async () => {
-
-    await alert( __dirname )
-
-    await alert( Object.keys( process.env ).join( '\n' ) )
-
-    const { HOME, PATH, USER } = process.env
-    await alert( `HOME: ${ HOME }\n\nPATH: ${ PATH }\n\nUSER: ${ USER }` )
-
-} )

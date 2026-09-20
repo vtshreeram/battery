@@ -28,7 +28,7 @@ const {
     get_temporary_workflow,
     get_travel_mode
 } = require( './settings' )
-const { resolve_battery_state } = require( './state-machine' )
+const { resolve_battery_state, pick_status_for_display } = require( './state-machine' )
 const { evaluate_power_notifications } = require( './notifications' )
 const {
     start_charge_to_full,
@@ -56,6 +56,28 @@ const {
 
 let tray = undefined
 let refresh_timer = undefined
+let last_good_status = null
+let last_icon_state = null
+let last_title = null
+let last_tooltip = null
+let last_refresh_interval_ms = null
+let refresh_in_flight = false
+let refresh_queued = false
+
+const apply_tray_visuals = ( iconState, title, tooltip ) => {
+    if( iconState !== last_icon_state ) {
+        tray.setImage( get_status_icon( iconState ) )
+        last_icon_state = iconState
+    }
+    if( tooltip !== last_tooltip ) {
+        tray.setToolTip( tooltip )
+        last_tooltip = tooltip
+    }
+    if( title !== last_title ) {
+        tray.setTitle( title )
+        last_title = title
+    }
+}
 
 const LIMIT_PRESETS = [ 70, 75, 80, 85, 90, 100 ]
 
@@ -162,9 +184,13 @@ async function handle_show_diagnostics() {
 // Build tray context menu
 const generate_app_menu = async () => {
     try {
-        const status = await get_battery_status()
+        const fresh_status = await get_battery_status()
+        const { status, stale } = pick_status_for_display( fresh_status, last_good_status )
+        if( status?.available ) last_good_status = status
+
         const icon_style = get_icon_style_setting()
-        const on_battery = powerMonitor.onBatteryPower || ( status?.discharging ?? false )
+        const ac_attached = await is_ac_attached()
+        const on_battery = ac_attached === false || powerMonitor.onBatteryPower
 
         // Evaluate active temporary workflows (charge to full / pause) and scheduler
         await evaluate_temporary_workflow( status, on_battery )
@@ -172,16 +198,14 @@ const generate_app_menu = async () => {
         const temporary_workflow = get_temporary_workflow()
         const calibrating = is_calibration_running()
 
-        // Handle unavailable hardware status
+        // Handle unavailable hardware status (only when we have no last-good reading)
         if( !status || !status.available ) {
             log( `[Interface] Battery status unavailable, rendering error menu` )
-            tray.setImage( get_status_icon( 'battery' ) )
-            tray.setToolTip( 'Battery King: Status unavailable' )
-            if( icon_style === 'text' ) {
-                tray.setTitle( ' --%' )
-            } else {
-                tray.setTitle( '' )
-            }
+            apply_tray_visuals(
+                'unplugged',
+                icon_style === 'text' ? ' --%' : '',
+                'Battery King: Status unavailable'
+            )
 
             return Menu.buildFromTemplate( [
                 {
@@ -247,6 +271,7 @@ const generate_app_menu = async () => {
             limiter_enabled: limiter_on,
             protection_mode,
             on_battery,
+            ac_attached,
             temporary_workflow,
             calibration_active: calibrating,
             temperature_c: temp_c
@@ -263,15 +288,16 @@ const generate_app_menu = async () => {
         record_health_snapshot( health )
         update_statistics_tick( semantic.state )
 
-        log( `[Interface] Update tray: ${ status.percentage }% (state: ${ semantic.state }, label: ${ semantic.label })` )
-        tray.setImage( get_status_icon( semantic.iconState ) )
-        tray.setToolTip( `Battery King: ${ status.percentage }% • ${ semantic.label }` )
-
-        if( icon_style === 'text' ) {
-            tray.setTitle( ` ${ status.percentage }%` )
+        if( stale ) {
+            log( `[Interface] Using last-good status after a failed poll: ${ status.percentage }% (${ semantic.state })` )
         } else {
-            tray.setTitle( '' )
+            log( `[Interface] Update tray: ${ status.percentage }% (state: ${ semantic.state }, label: ${ semantic.label })` )
         }
+        apply_tray_visuals(
+            semantic.iconState,
+            icon_style === 'text' ? ` ${ status.percentage }%` : '',
+            `Battery King: ${ status.percentage }% • ${ semantic.label }`
+        )
 
         // Build limit selection submenu
         const limit_submenu = LIMIT_PRESETS.map( pct => ( {
@@ -286,7 +312,6 @@ const generate_app_menu = async () => {
             click: handle_custom_limit_dialog
         } )
 
-        const ac_attached = await is_ac_attached()
         let battery_subtext = ''
         if( on_battery && status.remaining && /^\d{1,2}:\d{2}$/.test( status.remaining.trim() ) && status.remaining.trim() !== '0:00' ) {
             battery_subtext = ` (${ status.remaining.trim() } remaining)`
@@ -561,37 +586,58 @@ const generate_app_menu = async () => {
 
 // Refresh tray with battery status values
 const refresh_tray = async ( force_interactive_refresh = false ) => {
-    log( '[Interface] Refreshing tray icon...' )
-    const new_menu = await generate_app_menu()
-    if( force_interactive_refresh && new_menu ) {
-        tray.closeContextMenu()
-        tray.popUpContextMenu( new_menu )
+    if( !tray ) return
+    if( refresh_in_flight ) {
+        refresh_queued = true
+        return
     }
-    if( new_menu ) {
-        tray.setContextMenu( new_menu )
+    refresh_in_flight = true
+    try {
+        const new_menu = await generate_app_menu()
+        if( force_interactive_refresh && new_menu ) {
+            tray.closeContextMenu()
+            tray.popUpContextMenu( new_menu )
+        }
+        if( new_menu ) {
+            tray.setContextMenu( new_menu )
+        }
+        set_interface_update_timer()
+    } finally {
+        refresh_in_flight = false
+        if( refresh_queued ) {
+            refresh_queued = false
+            refresh_tray()
+        }
     }
-    set_interface_update_timer()
+}
+
+const compute_refresh_interval = ( status ) => {
+    const slow_interval = 1000 * 60 * 1
+    const fast_interval = 1000 * 30
+    if( !status || !status.available ) return slow_interval
+
+    const maintain_percentage = status.maintain_percentage || 80
+    const percentage = status.percentage || 80
+    const percentage_delta = Math.floor( Math.abs( percentage - maintain_percentage ) )
+    const full_and_charging = status.charging && percentage === 100
+    return percentage_delta < 5 || powerMonitor.onBatteryPower || full_and_charging ? slow_interval : fast_interval
 }
 
 // Periodic refreshing of icon and state
-const set_interface_update_timer = async ( disable_only = false ) => {
-    if( !disable_only ) log( `[Interface] Refreshing update timer` )
-    else log( `[Interface] Disabling update timer` )
+const set_interface_update_timer = ( disable_only = false ) => {
+    if( disable_only ) {
+        if( refresh_timer ) clearInterval( refresh_timer )
+        refresh_timer = undefined
+        last_refresh_interval_ms = null
+        return
+    }
+
+    const refresh_speed = compute_refresh_interval( last_good_status )
+    if( refresh_timer && last_refresh_interval_ms === refresh_speed ) return
 
     if( refresh_timer ) clearInterval( refresh_timer )
-    if( disable_only ) return
-
-    const status = await get_battery_status()
-    const maintain_percentage = status?.maintain_percentage || 80
-    const percentage = status?.percentage || 80
-    const percentage_delta = Math.floor( Math.abs( percentage - maintain_percentage ) )
-
-    const slow_interval = 1000 * 60 * 1
-    const fast_interval = 1000 * 30
-    const full_and_charging = status?.charging && percentage === 100
-    const refresh_speed = percentage_delta < 5 || powerMonitor.onBatteryPower || full_and_charging ? slow_interval : fast_interval
-
-    refresh_timer = setInterval( refresh_tray, refresh_speed )
+    last_refresh_interval_ms = refresh_speed
+    refresh_timer = setInterval( () => refresh_tray(), refresh_speed )
 }
 
 /* ///////////////////////////////
@@ -600,9 +646,8 @@ const set_interface_update_timer = async ( disable_only = false ) => {
 async function set_initial_interface() {
     log( '\n===\n=== Starting tray app\n===\n' )
     const is_on_battery = powerMonitor.onBatteryPower
-    tray = new Tray( get_status_icon( is_on_battery ? 'battery' : 'charging' ) )
-
-    tray.setTitle( '  updating...' )
+    last_icon_state = is_on_battery ? 'unplugged' : 'charging'
+    tray = new Tray( get_status_icon( last_icon_state ) )
     log( '[Interface] Tray icon created' )
 
     // Initialize IPC bridge with Settings Window
@@ -612,13 +657,8 @@ async function set_initial_interface() {
     await initialize_battery()
     log( `[Interface] Battery initialization completed. Restored mode: ${ get_protection_mode() }` )
 
-    // Initial render
-    tray.setTitle( '' )
     await refresh_tray()
 
-    // Listeners
-    tray.on( 'mouse-enter', () => refresh_tray() )
-    tray.on( 'click', () => refresh_tray() )
     nativeTheme.on( 'updated', () => refresh_tray() )
 
     powerMonitor.on( 'on-ac', () => {
