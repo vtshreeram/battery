@@ -7,7 +7,10 @@ const {
     is_limiter_enabled,
     get_battery_status,
     uninstall_battery,
-    get_battery_health
+    get_battery_health,
+    is_ac_attached,
+    switch_to_battery,
+    switch_to_power
 } = require( './battery' )
 const { log } = require( './helpers' )
 const { get_status_icon } = require( './theme' )
@@ -283,7 +286,7 @@ const generate_app_menu = async () => {
             click: handle_custom_limit_dialog
         } )
 
-        let power_source_text = on_battery ? 'Power Source: Battery' : 'Power Source: Power Adapter'
+        const ac_attached = await is_ac_attached()
         let battery_subtext = ''
         if( on_battery && status.remaining && /^\d{1,2}:\d{2}$/.test( status.remaining.trim() ) && status.remaining.trim() !== '0:00' ) {
             battery_subtext = ` (${ status.remaining.trim() } remaining)`
@@ -301,10 +304,6 @@ const generate_app_menu = async () => {
                 enabled: false
             },
             {
-                label: power_source_text,
-                enabled: false
-            },
-            {
                 label: `Status: ${ semantic.label }`,
                 enabled: false
             },
@@ -314,6 +313,34 @@ const generate_app_menu = async () => {
                     enabled: false
                 }
             ] : [],
+            { type: 'separator' },
+
+            // Power Source Selector (Choose either Power Adapter or Battery)
+            {
+                label: 'Power Source:',
+                enabled: false
+            },
+            {
+                label: '🔌 Power Adapter',
+                type: 'radio',
+                checked: ac_attached && !status.discharging,
+                enabled: ac_attached,
+                click: async () => {
+                    log( '[Interface] Selected Power Adapter' )
+                    await switch_to_power()
+                    await refresh_tray()
+                }
+            },
+            {
+                label: '⚡️ Battery Power',
+                type: 'radio',
+                checked: !ac_attached || status.discharging,
+                click: async () => {
+                    log( '[Interface] Selected Battery Power' )
+                    await switch_to_battery()
+                    await refresh_tray()
+                }
+            },
             { type: 'separator' },
 
             // Primary Control
@@ -432,15 +459,24 @@ const generate_app_menu = async () => {
             },
             { type: 'separator' },
 
-            // Settings & Tools
+            // Settings & Merged Tools
             {
                 label: 'Battery King Settings...',
                 accelerator: 'CmdOrCtrl+,',
                 click: open_settings_window
             },
             {
-                label: 'Advanced',
+                label: 'About & Tools',
                 submenu: [
+                    {
+                        label: `Battery King v${ app.getVersion() }`,
+                        enabled: false
+                    },
+                    {
+                        label: 'Check for Updates...',
+                        click: () => shell.openExternal( URL_RELEASES )
+                    },
+                    { type: 'separator' },
                     {
                         label: `Show percentage in menu bar (${ status.percentage }%)`,
                         type: 'checkbox',
@@ -482,22 +518,6 @@ const generate_app_menu = async () => {
                         click: async () => {
                             await export_diagnostic_bundle()
                         }
-                    }
-                ]
-            },
-            { type: 'separator' },
-
-            // About & Quit
-            {
-                label: 'About Battery King',
-                submenu: [
-                    {
-                        label: `Battery King v${ app.getVersion() }`,
-                        enabled: false
-                    },
-                    {
-                        label: 'Check for updates...',
-                        click: () => shell.openExternal( URL_RELEASES )
                     },
                     { type: 'separator' },
                     {
@@ -514,7 +534,7 @@ const generate_app_menu = async () => {
                     },
                     { type: 'separator' },
                     {
-                        label: `Uninstall Battery King...`,
+                        label: 'Uninstall Battery King...',
                         click: async () => {
                             const uninstalled = await uninstall_battery()
                             if( !uninstalled ) return
@@ -524,6 +544,7 @@ const generate_app_menu = async () => {
                     }
                 ]
             },
+            { type: 'separator' },
             {
                 label: 'Quit Battery King',
                 accelerator: 'CmdOrCtrl+Q',

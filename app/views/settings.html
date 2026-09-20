@@ -869,6 +869,17 @@
 
         <div class="group-header">Quick Actions</div>
         <div class="card">
+          <div class="row" id="row-power-source">
+            <div class="row-info">
+              <div class="row-title" id="power-source-title">Active Power Source</div>
+              <div class="row-desc" id="power-source-desc">Choose whether your Mac runs on Power Adapter or Battery</div>
+            </div>
+            <div class="segmented-control" id="power-source-control">
+              <button class="preset-btn" id="btn-choose-adapter">🔌 Power Adapter</button>
+              <button class="preset-btn" id="btn-choose-battery">⚡️ Battery</button>
+            </div>
+          </div>
+
           <div class="row">
             <div class="row-info">
               <div class="row-title">Charge to 100% Once</div>
@@ -1264,6 +1275,40 @@
         }
       } )
 
+      // Power Source Segmented Selection
+      const powerTitle = document.getElementById( 'power-source-title' )
+      const powerDesc = document.getElementById( 'power-source-desc' )
+      const btnAdapter = document.getElementById( 'btn-choose-adapter' )
+      const btnBattery = document.getElementById( 'btn-choose-battery' )
+
+      if( btnAdapter && btnBattery && data.status ) {
+        const isDischarging = Boolean( data.status.discharging )
+        const acAttached = data.ac_attached !== false
+
+        if( !acAttached ) {
+          if( powerTitle ) powerTitle.textContent = 'Active Power Source: Battery'
+          if( powerDesc ) powerDesc.textContent = 'MacBook is running on battery because no charger is connected.'
+          btnAdapter.disabled = true
+          btnAdapter.classList.remove( 'active' )
+          btnBattery.disabled = false
+          btnBattery.classList.add( 'active' )
+        } else if( isDischarging ) {
+          if( powerTitle ) powerTitle.textContent = 'Active Power Source: Battery (Charger Connected)'
+          if( powerDesc ) powerDesc.textContent = 'Drawing strictly from battery while plugged in. Power adapter disconnected via SMC.'
+          btnAdapter.disabled = false
+          btnAdapter.classList.remove( 'active' )
+          btnBattery.disabled = false
+          btnBattery.classList.add( 'active' )
+        } else {
+          if( powerTitle ) powerTitle.textContent = 'Active Power Source: Power Adapter'
+          if( powerDesc ) powerDesc.textContent = 'Drawing from AC power adapter. Click Battery to run on battery while plugged in.'
+          btnAdapter.disabled = false
+          btnAdapter.classList.add( 'active' )
+          btnBattery.disabled = false
+          btnBattery.classList.remove( 'active' )
+        }
+      }
+
       // Recommendations
       renderRecommendations( data.recommendations || [] )
 
@@ -1470,7 +1515,30 @@
       await loadData()
     } )
 
-    // Quick Action Buttons
+    // Quick Action Buttons - Power Source Selection
+    const btnAdapter = document.getElementById( 'btn-choose-adapter' )
+    const btnBattery = document.getElementById( 'btn-choose-battery' )
+
+    if( btnAdapter ) {
+      btnAdapter.addEventListener( 'click', async () => {
+        if( btnAdapter.classList.contains( 'active' ) ) return
+        btnAdapter.disabled = true
+        btnBattery.disabled = true
+        await ipcRenderer.invoke( 'settings:switch_to_power' )
+        await loadData()
+      } )
+    }
+
+    if( btnBattery ) {
+      btnBattery.addEventListener( 'click', async () => {
+        if( btnBattery.classList.contains( 'active' ) ) return
+        btnAdapter.disabled = true
+        btnBattery.disabled = true
+        await ipcRenderer.invoke( 'settings:switch_to_battery' )
+        await loadData()
+      } )
+    }
+
     document.getElementById( 'btn-charge-full' ).addEventListener( 'click', () => {
       ipcRenderer.invoke( 'settings:charge_full' )
     } )

@@ -11,7 +11,15 @@ const {
     set_notification_alert_style
 } = require( './settings' )
 const { send_test_notification } = require( './notifications' )
-const { get_battery_status, get_battery_health, enable_battery_limiter, disable_battery_limiter } = require( './battery' )
+const {
+    get_battery_status,
+    get_battery_health,
+    enable_battery_limiter,
+    disable_battery_limiter,
+    switch_to_battery,
+    switch_to_power,
+    is_ac_attached
+} = require( './battery' )
 const { run_diagnostics } = require( './diagnostics' )
 const { export_diagnostic_bundle } = require( './logs' )
 const { repair_installation } = require( './repair' )
@@ -72,9 +80,41 @@ const init_settings_ipc = ( on_change_callback ) => {
         const stats = get_statistics()
         const health_trends = get_health_trends()
         const health_history = get_health_history( 30 )
+        const ac_attached = await is_ac_attached().catch( () => true )
         const recommendations = generate_recommendations( { stats, settings, health, status } )
 
-        return { settings, status, health, diagnostics, activity, stats, health_trends, health_history, recommendations }
+        return { settings, status, health, diagnostics, activity, stats, health_trends, health_history, recommendations, ac_attached }
+    } )
+
+    ipcMain.handle( 'settings:switch_to_power', async () => {
+        log( '[SettingsWindow] IPC switch_to_power' )
+        await switch_to_power()
+        if( on_change_callback ) on_change_callback()
+        const new_status = await get_battery_status().catch( () => null )
+        const ac_attached = await is_ac_attached().catch( () => true )
+        return { status: new_status, ac_attached }
+    } )
+
+    ipcMain.handle( 'settings:switch_to_battery', async () => {
+        log( '[SettingsWindow] IPC switch_to_battery' )
+        await switch_to_battery()
+        if( on_change_callback ) on_change_callback()
+        const new_status = await get_battery_status().catch( () => null )
+        const ac_attached = await is_ac_attached().catch( () => true )
+        return { status: new_status, ac_attached }
+    } )
+
+    ipcMain.handle( 'settings:toggle_power_source', async () => {
+        const status = await get_battery_status().catch( () => null )
+        if( status?.discharging ) {
+            await switch_to_power()
+        } else {
+            await switch_to_battery()
+        }
+        if( on_change_callback ) on_change_callback()
+        const new_status = await get_battery_status().catch( () => null )
+        const ac_attached = await is_ac_attached().catch( () => true )
+        return { status: new_status, ac_attached }
     } )
 
     ipcMain.handle( 'settings:set_protection', async ( _, mode ) => {

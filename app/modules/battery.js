@@ -390,6 +390,59 @@ const get_battery_health = async () => {
     }
 }
 
+/**
+ * Check if the AC power adapter is physically attached
+ * @returns {Promise<boolean>}
+ */
+const is_ac_attached = async () => {
+    try {
+        const { stdout } = await exec_file_async( '/usr/sbin/ioreg', [ '-r', '-n', 'AppleSmartBattery' ] )
+        return /"ExternalConnected"\s*=\s*Yes/i.test( stdout )
+    } catch ( e ) {
+        log( '[Battery] Error checking AC attached state: ', e?.message || e )
+        return true
+    }
+}
+
+/**
+ * Switch power source to battery (disables AC adapter power draw even when plugged in)
+ * @returns {Promise<object|null>}
+ */
+const switch_to_battery = async () => {
+    try {
+        log( '[Battery] Switching power source to battery...' )
+        await exec_async( `${ battery } adapter off` )
+        const status = await get_battery_status()
+        return status
+    } catch ( e ) {
+        log( '[Battery] Error switching to battery: ', e )
+        await alert( `Could not switch to battery power:\n${ e.message }` )
+        return null
+    }
+}
+
+/**
+ * Switch power source to power adapter (restores AC adapter power and limiter)
+ * @returns {Promise<object|null>}
+ */
+const switch_to_power = async () => {
+    try {
+        log( '[Battery] Switching power source to power adapter...' )
+        await exec_async( `${ battery } adapter on` )
+        const mode = get_protection_mode()
+        const target = get_charge_limit()
+        if( mode === 'enabled' ) {
+            await enable_battery_limiter( target )
+        }
+        const status = await get_battery_status()
+        return status
+    } catch ( e ) {
+        log( '[Battery] Error switching to power adapter: ', e )
+        await alert( `Could not switch to power adapter:\n${ e.message }` )
+        return null
+    }
+}
+
 module.exports = {
     parse_status_csv,
     parse_ioreg_battery,
@@ -400,5 +453,8 @@ module.exports = {
     is_limiter_enabled,
     get_battery_status,
     uninstall_battery,
-    get_battery_health
+    get_battery_health,
+    is_ac_attached,
+    switch_to_battery,
+    switch_to_power
 }

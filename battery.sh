@@ -4,7 +4,7 @@
 ## Update management
 ## variables are used by this binary as well at the update script
 ## ###############
-BATTERY_CLI_VERSION="v1.3.7"
+BATTERY_CLI_VERSION="v1.3.8"
 
 # If a script may run as root:
 #   - Reset PATH to safe defaults at the very beginning of the script.
@@ -107,6 +107,11 @@ Usage:
   battery adapter SETTING[on/off]
     manually set the adapter to (not) charge even when plugged in
     eg: battery adapter off
+
+  battery switch TARGET[battery/power]
+    switch power source to battery or power adapter while plugged in
+    eg: battery switch battery
+    eg: battery switch power
 
   battery calibrate
     calibrate the battery by discharging it to 15%, then recharging it to 100%, and keeping it there for 1 hour
@@ -823,6 +828,24 @@ if [[ "$action" == "charging" ]]; then
 	fi
 
 	exit 0
+
+fi
+
+# Power source switcher (switch to battery or switch to power/adapter)
+if [[ "$action" == "switch" ]] || [[ "$action" == "power" ]]; then
+
+	if [[ "$setting" == "battery" ]]; then
+		log "⚡️ Switching power source to Battery (disabling adapter)"
+		action="adapter"
+		setting="off"
+	elif [[ "$setting" == "power" || "$setting" == "adapter" ]]; then
+		log "🔌 Switching power source to Power Adapter (enabling adapter)"
+		action="adapter"
+		setting="on"
+	else
+		log "Error: Unknown power target '$setting'. Please use 'battery switch battery' or 'battery switch power'."
+		exit 1
+	fi
 
 fi
 
