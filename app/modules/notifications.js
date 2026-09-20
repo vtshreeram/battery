@@ -147,8 +147,8 @@ const evaluate_power_notifications = ( { on_battery, percentage, target } ) => {
             send_notification( {
                 category: 'target_reached',
                 title: 'Battery King',
-                subtitle: `Target Limit Reached (${ target_pct }%)`,
-                body: `Power adapter bypass active. System running directly on AC with zero battery wear.`,
+                subtitle: `Charge limit reached (${ target_pct }%)`,
+                body: `Charging stopped at ${ target_pct }%. The Mac is now running from the adapter.`,
                 sound: 'Glass'
             } )
         }

@@ -375,7 +375,7 @@ const generate_app_menu = async () => {
 
             // Primary Control
             {
-                label: 'Battery Protection',
+                label: 'Limit charging',
                 type: 'checkbox',
                 checked: limiter_on && !temporary_workflow,
                 click: toggle_limiter
@@ -399,7 +399,7 @@ const generate_app_menu = async () => {
             ] : [],
             ... temporary_workflow ? [
                 {
-                    label: `Active: ${ temporary_workflow.type === 'full_charge' ? 'Charging to 100%' : 'Protection Paused' }`,
+                    label: `Active: ${ temporary_workflow.type === 'full_charge' ? 'Charging to 100%' : 'Charge limit paused' }`,
                     enabled: false
                 },
                 {
@@ -419,7 +419,7 @@ const generate_app_menu = async () => {
                     }
                 },
                 {
-                    label: 'Pause Protection',
+                    label: 'Pause charge limit',
                     submenu: [
                         {
                             label: 'For 1 Hour',

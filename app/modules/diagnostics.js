@@ -282,14 +282,14 @@ const run_diagnostics = async () => {
         const settings = get_all_settings()
         checks.push( {
             id: 'persisted_mode',
-            name: 'Protection Mode Preference',
+            name: 'Charge limit preference',
             status: 'pass',
             details: `Mode: ${ settings.protection_mode }, Target Limit: ${ settings.charge_limit }%`
         } )
     } catch ( err ) {
         checks.push( {
             id: 'persisted_mode',
-            name: 'Protection Mode Preference',
+            name: 'Charge limit preference',
             status: 'warning',
             details: `Could not read persisted settings: ${ err.message }`
         } )

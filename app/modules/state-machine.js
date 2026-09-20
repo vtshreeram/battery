@@ -83,7 +83,7 @@ const resolve_battery_state = ( {
     if( temporary_workflow && temporary_workflow.type === 'pause' ) {
         return {
             state: ProtectionState.PAUSED,
-            label: 'Protection temporarily paused',
+            label: 'Charge limit paused',
             iconState: on_battery ? 'battery' : 'charging'
         }
     }
@@ -123,7 +123,7 @@ const resolve_battery_state = ( {
     if( protection_mode === 'disabled' || !limiter_enabled ) {
         return {
             state: ProtectionState.DISABLED,
-            label: status.charging ? 'Charging (Limiter disabled)' : 'Limiter disabled',
+            label: status.charging ? 'Charging (limit off)' : 'Charge limit off',
             iconState: status.charging ? 'charging' : 'battery'
         }
     }
@@ -135,7 +135,7 @@ const resolve_battery_state = ( {
     if( current >= target ) {
         return {
             state: ProtectionState.BYPASS,
-            label: `Protected at ${ target }% (Adapter Bypass)`,
+            label: `Holding at ${ target }% (using adapter)`,
             iconState: 'protected'
         }
     }
@@ -150,7 +150,7 @@ const resolve_battery_state = ( {
 
     return {
         state: ProtectionState.MONITORING,
-        label: `Maintaining at ${ target }%`,
+        label: `Holding at ${ target }%`,
         iconState: 'protected'
     }
 }

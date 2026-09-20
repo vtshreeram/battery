@@ -79,8 +79,8 @@ const start_pause_protection = async ( duration ) => {
         set_temporary_workflow( workflow )
         record_event( {
             type: 'workflow_start',
-            title: `Protection Paused (${ duration })`,
-            detail: `Limiter paused. Will restore ${ previous_limit }% limit (${ previous_mode }).`
+            title: `Charge limit paused (${ duration })`,
+            detail: `Charge limit paused. Will restore ${ previous_limit }% limit (${ previous_mode }).`
         } )
 
         await disable_battery_limiter()
@@ -146,7 +146,7 @@ const evaluate_temporary_workflow = async ( status, on_battery ) => {
                 send_notification( {
                     category: 'full_charge_once_completed',
                     title: '🔋 Full Charge Complete',
-                    body: `Battery reached 100%. Restored ${ workflow.restore_limit }% protection limit.`
+                    body: `Battery reached 100%. Restored ${ workflow.restore_limit }% charge limit.`
                 } )
 
                 record_event( {
@@ -176,13 +176,13 @@ const evaluate_temporary_workflow = async ( status, on_battery ) => {
 
                 send_notification( {
                     category: 'pause_ending',
-                    title: '⏳ Protection Pause Ended',
-                    body: `Resuming ${ workflow.restore_limit }% battery protection.`
+                    title: '⏳ Charge limit pause ended',
+                    body: `Resuming ${ workflow.restore_limit }% charge limit.`
                 } )
 
                 record_event( {
                     type: 'workflow_complete',
-                    title: 'Protection Pause Ended',
+                    title: 'Charge limit pause ended',
                     detail: `Restored ${ workflow.restore_limit }% limit (${ workflow.restore_mode }).`
                 } )
 

@@ -799,7 +799,7 @@
 
       <!-- Tab: Charging & Protection -->
       <section id="tab-charging" class="tab-pane active">
-        <h1 class="page-title">Charging & Protection</h1>
+        <h1 class="page-title">Charging</h1>
 
         <!-- Contextual Recommendations Container -->
         <div class="recommendations-container" id="rec-container"></div>
@@ -808,8 +808,8 @@
         <div class="card">
           <div class="row">
             <div class="row-info">
-              <div class="row-title">Battery Protection</div>
-              <div class="row-desc">Maintains battery charge at your target limit using AC adapter bypass</div>
+              <div class="row-title">Limit charging</div>
+              <div class="row-desc">Stop charging at your chosen percentage. The Mac then runs from the adapter.</div>
             </div>
             <label class="switch">
               <input type="checkbox" id="toggle-protection">
@@ -843,7 +843,7 @@
             </label>
           </div>
         </div>
-        <div class="group-footer">Limiting the maximum state of charge reduces thermal and mechanical stress on lithium-ion battery chemistry, substantially prolonging battery health.</div>
+        <div class="group-footer">Keeping the battery off 100% while plugged in reduces wear and helps it last longer.</div>
 
         <div class="group-header">Travel Mode (Departure Charging)</div>
         <div class="card">
@@ -883,15 +883,15 @@
           <div class="row">
             <div class="row-info">
               <div class="row-title">Charge to 100% Once</div>
-              <div class="row-desc">Temporarily charges to full, then automatically restores your protection limit</div>
+              <div class="row-desc">Charges to full once, then goes back to your chosen charge limit</div>
             </div>
             <button class="btn btn-primary" id="btn-charge-full">Charge to 100%</button>
           </div>
 
           <div class="row">
             <div class="row-info">
-              <div class="row-title">Pause Protection</div>
-              <div class="row-desc">Temporarily suspend protection for meetings or mobile travel</div>
+              <div class="row-title">Pause charge limit</div>
+              <div class="row-desc">Allow charging as usual for a while, then restore your limit</div>
             </div>
             <div class="btn-group">
               <button class="btn btn-secondary" id="btn-pause-1h">1 Hour</button>
@@ -951,10 +951,10 @@
           </div>
         </div>
 
-        <div class="group-header">Protection Impact Statistics</div>
+        <div class="group-header">Charge limit statistics</div>
         <div class="card">
           <div class="row">
-            <div class="row-title">Time in AC Adapter Bypass</div>
+            <div class="row-title">Time held at charge limit</div>
             <div class="value-label" id="stat-bypass-hours">0.0 hours</div>
           </div>
           <div class="row">
@@ -967,7 +967,7 @@
           </div>
         </div>
         <div style="margin-top: 8px;">
-          <button class="btn btn-secondary" id="btn-reset-stats">Reset Protection Statistics</button>
+          <button class="btn btn-secondary" id="btn-reset-stats">Reset statistics</button>
         </div>
       </section>
 
@@ -1072,7 +1072,7 @@
             <div class="row">
               <div class="row-info">
                 <div class="row-title">Badge application icon</div>
-                <div class="row-desc">Show charging and protection indicators on menu bar icon</div>
+                <div class="row-desc">Show charging and charge-limit indicators on the menu bar icon</div>
               </div>
               <label class="switch">
                 <input type="checkbox" id="notif-badge-switch" checked>
@@ -1099,7 +1099,7 @@
               <div class="notif-icon-badge badge-green">🎯</div>
               <div class="row-info">
                 <div class="row-title">Target Limit Reached</div>
-                <div class="row-desc">Alert when charge reaches limit and enters adapter bypass</div>
+                <div class="row-desc">Alert when charging stops at your limit and the Mac runs from the adapter</div>
               </div>
               <label class="switch"><input type="checkbox" id="notify-target_reached"><span class="slider"></span></label>
             </div>
@@ -1126,7 +1126,7 @@
               <div class="notif-icon-badge badge-blue">⚡</div>
               <div class="row-info">
                 <div class="row-title">Full Charge Once Completed</div>
-                <div class="row-desc">Notify when temporary 100% workflow finishes and protection resumes</div>
+                <div class="row-desc">Notify when a full charge finishes and your charge limit is restored</div>
               </div>
               <label class="switch"><input type="checkbox" id="notify-full_charge_once_completed"><span class="slider"></span></label>
             </div>
@@ -1134,8 +1134,8 @@
             <div class="row notif-category-row">
               <div class="notif-icon-badge badge-purple">⏸️</div>
               <div class="row-info">
-                <div class="row-title">Protection Pause Ending</div>
-                <div class="row-desc">Notify when temporary protection pause timer expires</div>
+                <div class="row-title">Charge limit pause ending</div>
+                <div class="row-desc">Notify when a temporary pause of the charge limit ends</div>
               </div>
               <label class="switch"><input type="checkbox" id="notify-pause_ending"><span class="slider"></span></label>
             </div>

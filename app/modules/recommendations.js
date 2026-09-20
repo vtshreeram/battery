@@ -7,8 +7,8 @@ const generate_recommendations = ( { stats, settings, health, status } ) => {
             recommendations.push( {
                 id: 'enable_protection',
                 type: 'tip',
-                title: 'Consider Enabling Battery Protection',
-                message: 'Your MacBook spends significant time connected to power. Enabling an 80% charge limit keeps your battery in a resting voltage state and reduces chemical aging.'
+                title: 'Turn on Limit charging',
+                message: 'Your MacBook spends a lot of time on the charger. Turning on Limit charging (80% recommended) stops the battery at that level and runs the Mac from the adapter.'
             } )
         }
     }
