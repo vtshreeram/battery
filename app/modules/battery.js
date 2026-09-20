@@ -47,7 +47,8 @@ const parse_status_csv = ( csv_text = '' ) => {
 
     const pct = parseInt( raw_percentage, 10 )
     const percentage = isNaN( pct ) ? null : pct
-    const remaining = raw_remaining.match( /\d{1,2}:\d{1,2}/ ) ? raw_remaining :  raw_remaining.trim() || 'unknown' 
+    const timeMatch = raw_remaining.match( /\d{1,2}:\d{2}/ )
+    const remaining = timeMatch ? timeMatch[ 0 ] : 'unknown'
     const charging = raw_charging.trim() === 'enabled'
     const discharging = raw_discharging.trim() === 'discharging'
 
@@ -59,7 +60,8 @@ const parse_status_csv = ( csv_text = '' ) => {
 
     const is_valid = percentage !== null
 
-    let battery_state = is_valid ? `${ percentage }% (${ remaining } remaining)` : 'Battery status unavailable'
+    const remaining_suffix = remaining && remaining !== 'unknown' && remaining !== '0:00' ? ` (${ remaining } remaining)` : ''
+    let battery_state = is_valid ? `${ percentage }%${ remaining_suffix }` : 'Battery status unavailable'
     let daemon_state = ''
     if( discharging ) {
         daemon_state = `forcing discharge to ${ maintain_percentage || 80 }%`

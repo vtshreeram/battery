@@ -4,7 +4,7 @@
 ## Update management
 ## variables are used by this binary as well at the update script
 ## ###############
-BATTERY_CLI_VERSION="v1.3.5"
+BATTERY_CLI_VERSION="v1.3.7"
 
 # If a script may run as root:
 #   - Reset PATH to safe defaults at the very beginning of the script.
@@ -197,14 +197,30 @@ function notifications_enabled() {
 
 function send_notification() {
 	local title="$1"
-	local message="$2"
-	local sound="${3:-default}"
+	local subtitle="$2"
+	local message="$3"
+	local sound="${4:-default}"
+
+	# Gracefully handle 2 or 3 arguments
+	if [[ $# -eq 2 ]]; then
+		sound="default"
+		message="$subtitle"
+		subtitle=""
+	elif [[ $# -eq 3 && ( "$3" == "default" || "$3" == "Glass" || "$3" == "Sosumi" || "$3" == "Basso" || "$3" == "Hero" || "$3" == "Tink" || "$3" == "Ping" ) ]]; then
+		sound="$3"
+		message="$subtitle"
+		subtitle=""
+	fi
 
 	if ! notifications_enabled; then
 		return 0
 	fi
 
-	osascript -e "display notification \"$message\" with title \"$title\" sound name \"$sound\"" >/dev/null 2>&1 &
+	if [[ -n "$subtitle" ]]; then
+		osascript -e "display notification \"$message\" with title \"$title\" subtitle \"$subtitle\" sound name \"$sound\"" >/dev/null 2>&1 &
+	else
+		osascript -e "display notification \"$message\" with title \"$title\" sound name \"$sound\"" >/dev/null 2>&1 &
+	fi
 }
 
 function valid_percentage() {
@@ -454,7 +470,10 @@ function get_battery_percentage() {
 }
 
 function get_remaining_time() {
-	time_remaining=$(pmset -g batt | tail -n1 | awk '{print $5}')
+	time_remaining=$(pmset -g batt | grep -Eo '[0-9]{1,2}:[0-9]{2}' | head -n1)
+	if [[ -z "$time_remaining" ]]; then
+		time_remaining="unknown"
+	fi
 	echo "$time_remaining"
 }
 
@@ -999,7 +1018,7 @@ if [[ "$action" == "maintain_synchronous" ]]; then
 			change_magsafe_led_color "green"
 
 			if [[ "$notified_target_reached" != true ]]; then
-				send_notification "🔋 Battery Maintenance" "Target $upper_bound% reached. Switched to AC Adapter bypass (0 cycles)." "default"
+				send_notification "Battery King" "Target Limit Reached ($upper_bound%)" "Switched to AC Adapter bypass (0 cycles)." "Glass"
 				notified_target_reached=true
 			fi
 
@@ -1016,11 +1035,11 @@ if [[ "$action" == "maintain_synchronous" ]]; then
 		if [[ "$ac_attached" != "1" ]]; then
 			notified_target_reached=false
 			if [[ "$battery_percentage" -le 10 && "$notified_crit_10" != true ]]; then
-				send_notification "🚨 Critical Battery ($battery_percentage%)" "Battery is below 10%! Plug in charger immediately." "Basso"
+				send_notification "Battery King" "Critical Battery Alert ($battery_percentage%)" "Battery is below 10%! Plug in charger immediately." "Basso"
 				notified_crit_10=true
 				notified_low_20=true
 			elif [[ "$battery_percentage" -le 20 && "$notified_low_20" != true ]]; then
-				send_notification "🪫 Low Battery ($battery_percentage%)" "Connect charger to preserve battery longevity and avoid deep discharge." "Sosumi"
+				send_notification "Battery King" "Low Battery Warning ($battery_percentage%)" "Connect charger to preserve battery longevity." "Sosumi"
 				notified_low_20=true
 			fi
 		else
@@ -1330,7 +1349,7 @@ if [[ "$action" == "notify" ]]; then
 		on|enable)
 			echo "on" > "$notify_setting_file"
 			log "Notifications enabled"
-			send_notification "🔋 Battery CLI" "Notifications are now active." "default"
+			send_notification "Battery King" "Notifications Active" "Battery King notifications are now enabled." "Glass"
 			echo "✅ Battery notifications enabled."
 			exit 0
 			;;
@@ -1341,7 +1360,7 @@ if [[ "$action" == "notify" ]]; then
 			exit 0
 			;;
 		test)
-			send_notification "🔋 Battery CLI" "Test notification: AC Bypass active at 80% (0 cycles)" "default"
+			send_notification "Battery King" "Notification Test" "AC Bypass active at 80% (0 cycles)." "Glass"
 			echo "🔔 Sent test notification to macOS Notification Center."
 			exit 0
 			;;

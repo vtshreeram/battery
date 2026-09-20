@@ -1,124 +1,113 @@
-# Battery Charge Limiter for Apple Silicon MacBooks
+# 👑 Battery King
 
-<img width="320px" align="right" src="./screenshots/tray.png" alt="Battery Menu Bar UI"/>
+> **The definitive battery charge limiter and health manager for Apple Silicon MacBooks.**
 
-A modern, robust battery-management tool for Apple Silicon (M1/M2/M3/M4) Macs. It enables you to cap battery charging to 80% (or any custom limit between 50% and 100%), keeping your battery cool and significantly extending lithium-ion cell longevity when chronically connected to power.
+[![macOS](https://img.shields.io/badge/platform-macOS%2012%2B%20(Apple%20Silicon)-black?style=flat&logo=apple)](https://github.com/vtshreeram/battery)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+[![Zero Telemetry](https://img.shields.io/badge/telemetry-zero%20(100%25%20private)-brightgreen.svg)](README.md)
+[![Build Status](https://img.shields.io/badge/build-passing-success.svg)](https://github.com/vtshreeram/battery/actions)
 
-This repository is maintained at **[`vtshreeram/battery`](https://github.com/vtshreeram/battery)**.
+**Battery King** is a high-performance power management suite engineered specifically for Apple Silicon (M1, M2, M3, M4) MacBooks. It limits charging to 80% (or any custom limit between 50% and 100%), keeping your battery cool and substantially extending lithium-ion cell lifespan when connected to power.
 
-> **Why limit charging?** Lithium-ion batteries degrade fastest when held at 100% state-of-charge under high ambient temperatures. Keeping battery levels around 70–80% when plugged into power reduces chemical stress and maintains long-term capacity. For technical details, see [Battery University BU-808](https://batteryuniversity.com/article/bu-808-how-to-prolong-lithium-based-batteries).
+Maintained at **[`vtshreeram/battery`](https://github.com/vtshreeram/battery)**.
 
 ---
 
-## ⚡ Key Features
+## 💡 Why Battery King?
 
-### 🛡️ Smart Battery Protection
-* **Reboot-Persistent Limiting**: Maintains charge levels (default 80%) across reboots and sleep/wake cycles using a lightweight macOS `LaunchAgent` daemon.
-* **Custom Thresholds & Presets**: Choose quick presets (80%, 75%, 70%, 60%, 50%) or set custom limits anywhere between 50% and 100%.
-* **Optional Force Discharge**: When plugged in with battery above the target limit, seamlessly discharges the battery down to the target before holding power adapter bypass.
-* **Non-Destructive Defaults**: If protection is disabled by the user, the app respects the choice and never silently forces it back on.
+Lithium-ion battery cells experience their highest chemical, mechanical, and thermal stress when held at **100% state of charge under continuous high voltage**. 
 
-### 🚀 Flexible Overrides & Workflows
-* **Charge to 100% Once**: One-click top-up. The app charges to 100% and automatically restores your configured limit as soon as full charge is reached.
-* **Temporary Pause**: Pause battery limiting for 1 hour, 4 hours, until tomorrow morning (8:00 AM), or until power is unplugged.
-* **Travel Mode (Scheduled Departure)**: Set a departure time; the app dynamically calculates required charging lead-time and delivers a 100% charge right when you leave, automatically restoring protection afterwards.
-* **Battery Calibration Cycle**: 4-stage automated cycle (discharge to 15% -> charge to 100% -> hold for 1 hour -> restore limit) to recalibrate macOS battery capacity estimations.
+```mermaid
+flowchart LR
+    A[Power Adapter Connected] --> B{Battery King Limiter}
+    B -->|Below Target Limit e.g. 80%| C[Fast Charge to Target]
+    B -->|Target Limit Reached| D[AC Adapter Direct Bypass]
+    D --> E[0 Battery Cycles Wear]
+    D --> F[Cooler Operating Temperatures]
+```
 
-### 📊 Local Health Diagnostics & Monitoring
-* **Battery Health & History**: Inspect real-time capacity percentage, cycle counts, manufacturing details, and historical capacity retention trends saved locally.
-* **Informational Thermal Monitoring**: Real-time battery temperature display and alerts (>40°C elevated, >45°C high).
-  > **Note on Thermal Safety**: Thermal alerts are strictly informational and advisory. The software does not execute automated charging cutoffs based on thermal thresholds, ensuring hardware safety remains governed by Apple's built-in SMC firmware.
-* **Local Usage Statistics**: Track protection uptime, cycle efficiency, and charging state distributions without any external servers.
-* **Smart Heuristic Recommendations**: On-device tips based on your actual charging patterns.
+By maintaining your battery around **70%–80%** when connected to power, Battery King instructs macOS and the Apple System Management Controller (SMC) to power your laptop directly from the AC adapter (Adapter Bypass), preventing micro-cycles and long-term capacity degradation.
 
-### 🔒 Privacy & Architecture Hardening
-* **Zero Telemetry**: All third-party tracking, analytics endpoints (`unidentifiedanalytics`), and external telemetry have been completely removed.
-* **Sandboxed Path Resolution**: CLI invocations use strict, safe PATH environments (`/usr/bin:/bin:/usr/sbin:/sbin:/usr/local/bin:/usr/local/co.palokaj.battery`) preventing binary injection.
-* **Versioned Settings Schema**: Migration engine safely transforms legacy file-based configurations (`~/.battery/*.setting`) into a structured schema (`v1`) without data loss.
-* **Self-Repair Engine**: Integrated repair utility detects and repairs sudoers permissions, missing LaunchAgents, stale PID locks, and binary permissions with one click.
+---
+
+## ✨ Features
+
+### 🛡️ Smart Charge Limiting
+* **AC Adapter Bypass**: Powers the laptop directly from the AC charger once target is reached, saving battery cycle wear.
+* **Persistent Daemon**: Maintains target threshold across system reboots, user login, and sleep/wake cycles via a native `LaunchAgent`.
+* **Flexible Limits**: Choose quick presets (`70%`, `75%`, `80% (Recommended)`, `85%`, `90%`, `100%`) or configure any custom percentage (50%–100%).
+* **Optional Force-Discharge**: Discharges an overcharged battery down to your target limit before initiating AC bypass.
+
+### ✈️ Travel Mode & Quick Actions
+* **Travel Mode (Scheduled Departure)**: Set your flight or departure time; Battery King tops off to 100% just in time, minimizing time spent resting at full saturation.
+* **Charge to 100% Once**: One-click full charge top-up that automatically restores your protection limit once completed.
+* **Temporary Pause**: Pause protection for 1 hour, 4 hours, until tomorrow morning (8:00 AM), or until power is unplugged.
+* **Battery Calibration**: Automated 4-stage discharge/charge cycle to recalibrate macOS capacity estimation registers.
+
+### 🎨 Apple Native System Settings Design
+* **macOS HIG Compliant**: Built to mirror macOS System Settings (Ventura, Sonoma, Sequoia) with native SF squircle icon badges and inset grouped cards.
+* **Live Telemetry**: Real-time 3-second live updating of charging metrics, hardware temperature, and adapter status.
+* **Instant Search**: Search bar to dynamically filter preferences tabs.
+* **Smart Heuristic Recommendations**: On-device advisory banners for thermal warnings and optimal charging habits.
+
+### 📊 Health Analytics & Statistics
+* **Hardware Telemetry**: Displays Maximum Capacity, Cycle Count, Hardware Condition, and Operating Temperature.
+* **Observational Trends**: Tracks average, minimum, and maximum operating temperatures across recorded snapshots.
+* **Protection Impact**: Measures cumulative hours spent in AC Adapter Bypass (wear prevented / cycles saved).
+
+### 🔒 100% Private & Hardened
+* **Zero Telemetry**: Completely devoid of external tracking, analytics endpoints, or remote callbacks.
+* **Sandboxed Path Execution**: CLI invocations use strict, sanitized PATH environments.
+* **One-Click Self-Repair**: Detects and fixes sudoers permissions, daemons, and lock files automatically.
 
 ---
 
 ## 📥 Installation
 
 ### Requirements
-* Apple Silicon MacBook (M1, M2, M3, M4 or newer). Intel MacBooks are not supported.
-* macOS 12 Monterey, macOS 13 Ventura, macOS 14 Sonoma, or macOS 15 Sequoia.
+* **Hardware**: Apple Silicon MacBook (M1, M2, M3, M4, or newer). *Intel MacBooks are not supported.*
+* **Operating System**: macOS 12 Monterey, macOS 13 Ventura, macOS 14 Sonoma, or macOS 15 Sequoia.
 
-### Option 1: One-Line Installer (CLI + Menu Bar App)
-Run the following in your Terminal:
+### Option 1: One-Line Terminal Installer (Recommended)
+Run the following command in Terminal to install the CLI binary and the menu bar app:
 
 ```bash
 curl -s https://raw.githubusercontent.com/vtshreeram/battery/main/setup.sh | bash
 ```
 
 The installer will:
-1. Install Apple Silicon `smc` tool to `/usr/local/bin`
-2. Install `battery` CLI to `/usr/local/bin` and `/usr/local/co.palokaj.battery`
-3. Configure passwordless `sudo` rights for `smc` commands via `/etc/sudoers.d/battery`
-4. Register the background maintenance `LaunchAgent` daemon (`~/Library/LaunchAgents/battery.plist`)
-5. Download and place the Electron menu bar app in `/Applications/battery.app`
+1. Install the Apple Silicon `smc` utility.
+2. Install the `battery` CLI binary to `/usr/local/bin`.
+3. Configure passwordless `sudo` rights for SMC commands via `/etc/sudoers.d/battery`.
+4. Register the background maintenance `LaunchAgent` daemon (`~/Library/LaunchAgents/battery.plist`).
+5. Install and launch the **Battery King** application in `/Applications`.
 
 ### Option 2: Precompiled DMG Release
-Download the latest `.dmg` from the [Releases page](https://github.com/vtshreeram/battery/releases), open it, and drag `battery.app` to `/Applications`. Launch the application to finalize setup.
+Download the latest `battery-1.4.0-mac-arm64.dmg` from the [Releases page](https://github.com/vtshreeram/battery/releases), open it, and drag **Battery King** to `/Applications`.
 
 ---
 
 ## 🖥️ Command Line Interface (CLI)
 
-The GUI wraps around `battery.sh`, which can be run independently in terminal:
+Battery King includes a powerful CLI (`battery`) that runs standalone or behind the GUI:
 
-```bash
-# Maintain battery level at 80% (reboot-persistent)
-battery maintain 80
-
-# Maintain battery level with forced discharge down to target
-battery maintain 80 --force-discharge
-
-# Maintain battery within a window (e.g. 70% to 80%)
-battery maintain 70-80
-
-# Stop maintenance (disable limiter)
-battery maintain stop
-
-# Inspect battery status in human-readable or CSV format
-battery status
-battery status_csv
-
-# Inspect battery hardware health and capacity
-battery health
-
-# Run full battery calibration cycle
-battery calibrate
-
-# Enable or disable charging directly via SMC
-battery charging off
-battery charging on
-
-# Disconnect power adapter input
-battery adapter off
-battery adapter on
-
-# Self-repair permissions and launch daemons
-battery repair
-```
+| Command | Description |
+|---|---|
+| `battery maintain 80` | Maintain battery charge at 80% (reboot-persistent) |
+| `battery maintain 80 --force-discharge` | Maintain at 80%, discharging first if currently above 80% |
+| `battery maintain 70-80` | Maintain battery within a custom percentage range |
+| `battery maintain stop` | Stop maintenance and restore standard macOS charging |
+| `battery status` | Display formatted battery, voltage, and SMC charging status |
+| `battery status_csv` | Print machine-readable comma-delimited status telemetry |
+| `battery health` | Display cycle count, temperature, and maximum capacity |
+| `battery calibrate` | Start an automated full calibration cycle |
+| `battery charging on\|off` | Directly toggle battery charging via SMC |
+| `battery adapter on\|off` | Directly toggle power adapter connection via SMC |
+| `battery repair` | Automatically self-repair permissions, visudo, and daemons |
 
 ---
 
-## ⚙️ Settings & Configuration
-
-Access preferences by clicking the menu bar icon and selecting **Settings...**:
-* **Target Charge Limit**: Set limit between 50% and 100%.
-* **Force Discharge**: Toggle whether battery discharges when plugged in above target.
-* **Menu Bar Display Style**: Choose between percentage text badge (`80%`) or clean icon display.
-* **Granular Notifications**: Toggle specific alerts (Protection activated, Target reached, Low battery, Full charge completed, Pause ending, Temperature warning).
-* **Diagnostics & Logs**: View live sanitized logs, run system health checks, or export diagnostic reports.
-
----
-
-## 🛠️ Development & Contributing
-
-Contributions are welcome! Please ensure all code meets repository standards before submitting pull requests.
+## 🛠️ Development & Building
 
 ### Prerequisites
 * Node.js v20+
@@ -130,25 +119,30 @@ Contributions are welcome! Please ensure all code meets repository standards bef
 git clone https://github.com/vtshreeram/battery.git
 cd battery
 
-# Validate shell scripts
+# Validate shell scripts with ShellCheck
 shellcheck battery.sh setup.sh update.sh
 
-# Install app dependencies
+# Install Electron app dependencies
 cd app
 npm install
 
-# Run static linting (check-only mode)
-npm run lint:check
+# Run static linter
+npm run lint
 
-# Run automated test suite (mocked hardware, zero hardware mutation)
+# Run unit tests (mocked hardware, 0 hardware mutation)
 npm test
 
-# Build production Electron release (macOS arm64)
+# Build production macOS arm64 DMG and ZIP releases
 npm run build
 ```
+
+The compiled release packages are generated in [`app/dist/`](file:///Users/vtshreeram/Github/battery/app/dist/):
+* `dist/Battery King-1.4.0-mac-arm64.dmg`
+* `dist/Battery King-1.4.0-mac-arm64.zip`
+* `dist/mac-arm64/Battery King.app`
 
 ---
 
 ## 📄 License
 
-This project is open source and available under the [MIT License](LICENSE).
+Battery King is open source software released under the [MIT License](LICENSE).

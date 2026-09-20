@@ -34,14 +34,25 @@ const update_force_discharge_setting = async () => {
     }
 }
 
+const get_master_notifications = () => {
+    return Boolean( get_setting( 'master_notifications', true ) )
+}
+
+const set_master_notifications = ( enabled ) => {
+    log( `[Settings] Setting master notifications: ${ enabled }` )
+    return set_setting( 'master_notifications', Boolean( enabled ) )
+}
+
 const get_notifications_setting = () => {
+    if( !get_master_notifications() ) return false
     const notifications = get_setting( 'notifications', {} )
     return Object.values( notifications ).some( Boolean )
 }
 
 const toggle_notifications_setting = () => {
-    const current = get_notifications_setting()
+    const current = get_master_notifications()
     const new_state = !current
+    set_master_notifications( new_state )
     const notifications = get_setting( 'notifications', {} )
     const updated = {}
     for( const key of Object.keys( notifications ) ) {
@@ -50,6 +61,25 @@ const toggle_notifications_setting = () => {
     set_setting( 'notifications', updated )
     log( `[Settings] Toggled all notifications to: ${ new_state }` )
     return new_state
+}
+
+const get_notification_sound = () => {
+    return Boolean( get_setting( 'notification_sound', true ) )
+}
+
+const set_notification_sound = ( enabled ) => {
+    log( `[Settings] Setting notification sound to: ${ enabled }` )
+    return set_setting( 'notification_sound', Boolean( enabled ) )
+}
+
+const get_notification_alert_style = () => {
+    return get_setting( 'notification_alert_style', 'banners' )
+}
+
+const set_notification_alert_style = ( style ) => {
+    const valid = [ 'none', 'banners', 'alerts' ].includes( style ) ? style : 'banners'
+    log( `[Settings] Setting notification alert style to: ${ valid }` )
+    return set_setting( 'notification_alert_style', valid )
 }
 
 const get_notification_category = ( category ) => {
@@ -130,6 +160,12 @@ module.exports = {
     get_force_discharge_setting,
     toggle_force_discharge,
     update_force_discharge_setting,
+    get_master_notifications,
+    set_master_notifications,
+    get_notification_sound,
+    set_notification_sound,
+    get_notification_alert_style,
+    set_notification_alert_style,
     get_notifications_setting,
     toggle_notifications_setting,
     get_notification_category,

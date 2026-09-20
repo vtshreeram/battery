@@ -1,7 +1,8 @@
 {
   "name": "battery",
+  "productName": "Battery King",
   "version": "1.4.0",
-  "description": "A battery charge limiter for Apple silicon Mac devices",
+  "description": "Battery King - Battery charge limiter and health manager for Apple Silicon MacBooks",
   "main": "main.js",
   "build": {
     "appId": "co.palokaj.battery",

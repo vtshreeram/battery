@@ -5,8 +5,12 @@ const {
     set_protection_mode,
     set_charge_limit,
     toggle_force_discharge,
-    set_notification_category
+    set_notification_category,
+    set_master_notifications,
+    set_notification_sound,
+    set_notification_alert_style
 } = require( './settings' )
+const { send_test_notification } = require( './notifications' )
 const { get_battery_status, get_battery_health, enable_battery_limiter, disable_battery_limiter } = require( './battery' )
 const { run_diagnostics } = require( './diagnostics' )
 const { export_diagnostic_bundle } = require( './logs' )
@@ -30,10 +34,12 @@ const open_settings_window = () => {
     }
 
     settings_window = new BrowserWindow( {
-        width: 720,
-        height: 520,
-        resizable: false,
-        title: 'Battery Settings',
+        width: 780,
+        height: 580,
+        minWidth: 720,
+        minHeight: 520,
+        resizable: true,
+        title: 'Battery King Settings',
         titleBarStyle: 'hiddenInset',
         webPreferences: {
             nodeIntegration: true,
@@ -100,6 +106,22 @@ const init_settings_ipc = ( on_change_callback ) => {
 
     ipcMain.handle( 'settings:set_notif_cat', ( _, cat, enabled ) => {
         return set_notification_category( cat, enabled )
+    } )
+
+    ipcMain.handle( 'settings:set_master_notif', ( _, enabled ) => {
+        return set_master_notifications( enabled )
+    } )
+
+    ipcMain.handle( 'settings:set_notif_sound', ( _, enabled ) => {
+        return set_notification_sound( enabled )
+    } )
+
+    ipcMain.handle( 'settings:set_notif_style', ( _, style ) => {
+        return set_notification_alert_style( style )
+    } )
+
+    ipcMain.handle( 'settings:test_notification', () => {
+        return send_test_notification()
     } )
 
     ipcMain.handle( 'settings:charge_full', async () => {
