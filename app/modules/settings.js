@@ -161,6 +161,20 @@ const set_travel_mode = ( travel_mode ) => {
     return set_setting( 'travel_mode', travel_mode )
 }
 
+const get_startup_setting = () => {
+    return Boolean( get_setting( 'launch_at_login', true ) )
+}
+
+const set_startup_setting = ( enabled ) => {
+    log( `[Settings] Setting launch_at_login: ${ enabled }` )
+    return set_setting( 'launch_at_login', Boolean( enabled ) )
+}
+
+const toggle_startup_setting = () => {
+    const current = get_startup_setting()
+    return set_startup_setting( !current )
+}
+
 module.exports = {
     get_force_discharge_setting,
     toggle_force_discharge,
@@ -178,6 +192,9 @@ module.exports = {
     get_icon_style_setting,
     toggle_icon_style_setting,
     set_icon_style_setting,
+    get_startup_setting,
+    set_startup_setting,
+    toggle_startup_setting,
     get_protection_mode,
     set_protection_mode,
     get_charge_limit,

@@ -24,6 +24,7 @@ const { repair_installation } = require( './repair' )
 const { start_charge_to_full, start_pause_protection } = require( './temporary-charge' )
 const { start_calibration } = require( './calibration' )
 const { schedule_travel_mode, cancel_travel_mode } = require( './scheduler' )
+const { is_startup_enabled, set_startup_enabled, toggle_startup } = require( './startup' )
 const { log } = require( './helpers' )
 
 let settings_window = null
@@ -70,7 +71,8 @@ const init_settings_ipc = ( on_change_callback ) => {
         const status = await get_battery_status().catch( () => null )
         const health = await get_battery_health().catch( () => null )
         const ac_attached = await is_ac_attached().catch( () => true )
-        return { settings, status, health, ac_attached }
+        const startup = await is_startup_enabled().catch( () => true )
+        return { settings, status, health, ac_attached, startup }
     } )
 
     ipcMain.handle( 'settings:switch_to_power', async () => {
@@ -137,6 +139,20 @@ const init_settings_ipc = ( on_change_callback ) => {
 
     ipcMain.handle( 'settings:set_icon_style', ( _, style ) => {
         const val = set_icon_style_setting( style )
+        if( on_change_callback ) on_change_callback()
+        return val
+    } )
+
+    ipcMain.handle( 'settings:set_startup', async ( _, enabled ) => {
+        log( `[SettingsWindow] IPC set_startup: ${ enabled }` )
+        const val = await set_startup_enabled( enabled )
+        if( on_change_callback ) on_change_callback()
+        return val
+    } )
+
+    ipcMain.handle( 'settings:toggle_startup', async () => {
+        log( '[SettingsWindow] IPC toggle_startup' )
+        const val = await toggle_startup()
         if( on_change_callback ) on_change_callback()
         return val
     } )

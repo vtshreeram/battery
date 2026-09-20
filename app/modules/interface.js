@@ -36,6 +36,7 @@ const {
 } = require( './calibration' )
 const { open_settings_window, init_settings_ipc } = require( './settings-window' )
 const { evaluate_scheduler, cancel_travel_mode } = require( './scheduler' )
+const { is_startup_enabled, toggle_startup } = require( './startup' )
 const { record_health_snapshot } = require( './health-history' )
 const { update_statistics_tick } = require( './statistics' )
 const { run_diagnostics } = require( './diagnostics' )
@@ -216,6 +217,7 @@ const generate_app_menu = async () => {
         const limiter_on = await is_limiter_enabled()
         const protection_mode = get_protection_mode()
         const current_limit = get_charge_limit()
+        const startup_enabled = await is_startup_enabled()
         const health = await get_battery_health()
 
         // Extract raw temperature if available
@@ -377,6 +379,16 @@ const generate_app_menu = async () => {
             { type: 'separator' },
             ...exception_items,
             { type: 'separator' },
+            {
+                label: 'Launch at Login',
+                type: 'checkbox',
+                checked: startup_enabled,
+                click: async () => {
+                    log( '[Interface] Toggled Launch at Login' )
+                    await toggle_startup()
+                    await refresh_tray()
+                }
+            },
             {
                 label: 'Settings...',
                 accelerator: 'CmdOrCtrl+,',

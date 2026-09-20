@@ -16,6 +16,7 @@ const DEFAULT_SETTINGS = {
     charge_limit: 80,
     force_discharge: false,
     display_style: 'text',
+    launch_at_login: true,
     master_notifications: true,
     notification_sound: true, // play sound for notifications
     notification_alert_style: 'banners', // 'none' | 'banners' | 'alerts'

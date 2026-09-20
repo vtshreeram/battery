@@ -1,6 +1,7 @@
 const { app } = require( 'electron' )
 const { log } = require( './modules/helpers' )
 const { set_initial_interface, refresh_tray } = require( './modules/interface' )
+const { ensure_startup } = require( './modules/startup' )
 
 const got_lock = app.requestSingleInstanceLock()
 if( !got_lock ) {
@@ -31,7 +32,10 @@ if( got_lock ) {
     app.on( 'second-instance', () => {
         refresh_tray()
     } )
-    app.whenReady().then( set_initial_interface )
+    app.whenReady().then( () => {
+        set_initial_interface()
+        ensure_startup().catch( ( err ) => log( '[Startup] Error in ensure_startup: ', err ) )
+    } )
 }
 
 // Hide dock entry

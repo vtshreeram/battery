@@ -863,6 +863,16 @@
       <div class="card">
         <div class="row">
           <div class="row-info">
+            <div class="row-title">Launch at startup</div>
+            <div class="row-desc">Automatically start Battery King when you log in</div>
+          </div>
+          <label class="switch">
+            <input type="checkbox" id="toggle-startup" checked>
+            <span class="slider"></span>
+          </label>
+        </div>
+        <div class="row">
+          <div class="row-info">
             <div class="row-title">Show percentage in menu bar</div>
             <div class="row-desc">Display the current charge next to the icon</div>
           </div>
@@ -982,6 +992,9 @@
       const iconToggle = document.getElementById( 'toggle-icon-style' )
       if( iconToggle ) iconToggle.checked = ( data.settings.display_style || 'text' ) === 'text'
 
+      const startupToggle = document.getElementById( 'toggle-startup' )
+      if( startupToggle ) startupToggle.checked = Boolean( data.startup )
+
       const masterSwitch = document.getElementById( 'master-notifications-switch' )
       if( masterSwitch ) masterSwitch.checked = data.settings.master_notifications !== false
 
@@ -1055,6 +1068,13 @@
     document.getElementById( 'toggle-discharge' ).addEventListener( 'change', () => {
       ipcRenderer.invoke( 'settings:toggle_discharge' )
     } )
+
+    const startupToggle = document.getElementById( 'toggle-startup' )
+    if( startupToggle ) {
+      startupToggle.addEventListener( 'change', ( e ) => {
+        ipcRenderer.invoke( 'settings:set_startup', e.target.checked )
+      } )
+    }
 
     document.getElementById( 'toggle-icon-style' ).addEventListener( 'change', ( e ) => {
       ipcRenderer.invoke( 'settings:set_icon_style', e.target.checked ? 'text' : 'icon' )
