@@ -1,12 +1,11 @@
 /* eslint-disable no-use-before-define */
-const { shell, app, Tray, Menu, powerMonitor, nativeTheme, dialog } = require( 'electron' )
+const { app, Tray, Menu, powerMonitor, nativeTheme, dialog } = require( 'electron' )
 const {
     enable_battery_limiter,
     disable_battery_limiter,
     initialize_battery,
     is_limiter_enabled,
     get_battery_status,
-    uninstall_battery,
     get_battery_health,
     is_ac_attached,
     switch_to_battery,
@@ -15,12 +14,7 @@ const {
 const { log } = require( './helpers' )
 const { get_status_icon, round_battery_level } = require( './theme' )
 const {
-    get_force_discharge_setting,
-    update_force_discharge_setting,
-    get_notifications_setting,
-    toggle_notifications_setting,
     get_icon_style_setting,
-    toggle_icon_style_setting,
     get_charge_limit,
     set_charge_limit,
     get_protection_mode,
@@ -38,7 +32,6 @@ const {
 } = require( './temporary-charge' )
 const {
     is_calibration_running,
-    start_calibration,
     cancel_calibration
 } = require( './calibration' )
 const { open_settings_window, init_settings_ipc } = require( './settings-window' )
@@ -47,12 +40,6 @@ const { record_health_snapshot } = require( './health-history' )
 const { update_statistics_tick } = require( './statistics' )
 const { run_diagnostics } = require( './diagnostics' )
 const { open_logs_folder, export_diagnostic_bundle } = require( './logs' )
-const {
-    URL_RELEASES,
-    URL_README,
-    URL_CLI_DOCS,
-    URL_ISSUES
-} = require( './config' )
 
 let tray = undefined
 let refresh_timer = undefined
@@ -82,7 +69,7 @@ const apply_tray_visuals = ( iconState, title, tooltip, percent = null ) => {
     }
 }
 
-const LIMIT_PRESETS = [ 70, 75, 80, 85, 90, 100 ]
+const LIMIT_PRESETS = [ 70, 80, 90, 100 ]
 
 // User actions
 async function handle_set_limit( limit ) {
@@ -95,24 +82,6 @@ async function handle_set_limit( limit ) {
         await refresh_tray()
     } catch ( e ) {
         log( `[Interface] Error setting limit: `, e )
-    }
-}
-
-async function handle_custom_limit_dialog() {
-    try {
-        const current = get_charge_limit()
-        const { response } = await dialog.showMessageBox( {
-            type: 'question',
-            buttons: [ 'Set Limit', 'Cancel' ],
-            title: 'Custom Charge Limit',
-            message: `Current charge limit is ${ current }%.`,
-            detail: 'Enter a custom percentage between 50% and 100% in Settings, or pick a preset from the menu.'
-        } )
-        if( response === 0 ) {
-            open_settings_window()
-        }
-    } catch ( e ) {
-        log( `[Interface] Error in custom limit dialog: `, e )
     }
 }
 
@@ -149,18 +118,6 @@ async function toggle_limiter() {
         }
     } catch ( e ) {
         log( `[Interface] Error in toggle_limiter: `, e )
-    }
-}
-
-async function restart_limiter() {
-    try {
-        log( '[Interface] Restart limiter clicked' )
-        await disable_battery_limiter()
-        const target = get_charge_limit()
-        await enable_battery_limiter( target )
-        await refresh_tray()
-    } catch ( e ) {
-        log( `[Interface] Error in restart_limiter: `, e )
     }
 }
 
@@ -259,8 +216,6 @@ const generate_app_menu = async () => {
         const limiter_on = await is_limiter_enabled()
         const protection_mode = get_protection_mode()
         const current_limit = get_charge_limit()
-        const allow_discharge = get_force_discharge_setting()
-        const notifications_on = get_notifications_setting()
         const health = await get_battery_health()
 
         // Extract raw temperature if available
@@ -311,11 +266,6 @@ const generate_app_menu = async () => {
             checked: current_limit === pct && !temporary_workflow,
             click: () => handle_set_limit( pct )
         } ) )
-        limit_submenu.push( { type: 'separator' } )
-        limit_submenu.push( {
-            label: 'Custom percentage...',
-            click: handle_custom_limit_dialog
-        } )
 
         let battery_subtext = ''
         if( on_battery && status.remaining && /^\d{1,2}:\d{2}$/.test( status.remaining.trim() ) && status.remaining.trim() !== '0:00' ) {
@@ -327,8 +277,58 @@ const generate_app_menu = async () => {
         const travel_plan = get_travel_mode()
         const is_travel_active = Boolean( travel_plan && travel_plan.active && travel_plan.target_time_ms > Date.now() )
 
+        const exception_items = []
+        if( is_travel_active ) {
+            exception_items.push( {
+                label: `Scheduled: 100% by ${ new Date( travel_plan.target_time_ms ).toLocaleTimeString( [], { hour: '2-digit', minute: '2-digit' } ) }`,
+                enabled: false
+            } )
+            exception_items.push( {
+                label: 'Cancel scheduled full charge',
+                click: async () => {
+                    await cancel_travel_mode()
+                    await refresh_tray()
+                }
+            } )
+        } else if( temporary_workflow ) {
+            exception_items.push( {
+                label: temporary_workflow.type === 'full_charge' ? 'Charging to 100%…' : 'Charge limit paused',
+                enabled: false
+            } )
+            exception_items.push( {
+                label: 'Cancel',
+                click: async () => {
+                    await cancel_temporary_workflow()
+                    await refresh_tray()
+                }
+            } )
+        } else {
+            exception_items.push( {
+                label: 'Charge to 100% once',
+                click: async () => {
+                    await start_charge_to_full()
+                    await refresh_tray()
+                }
+            } )
+            exception_items.push( {
+                label: 'Pause until tomorrow',
+                click: async () => {
+                    await start_pause_protection( 'tomorrow' )
+                    await refresh_tray()
+                }
+            } )
+        }
+        if( calibrating ) {
+            exception_items.push( {
+                label: 'Cancel calibration',
+                click: async () => {
+                    await cancel_calibration()
+                    await refresh_tray()
+                }
+            } )
+        }
+
         return Menu.buildFromTemplate( [
-            // Status Header
             {
                 label: `Battery: ${ status.percentage }%${ battery_subtext }`,
                 enabled: false
@@ -337,21 +337,13 @@ const generate_app_menu = async () => {
                 label: `Status: ${ semantic.label }`,
                 enabled: false
             },
-            ... is_travel_active ? [
-                {
-                    label: `Scheduled: 100% by ${ new Date( travel_plan.target_time_ms ).toLocaleTimeString( [], { hour: '2-digit', minute: '2-digit' } ) }`,
-                    enabled: false
-                }
-            ] : [],
             { type: 'separator' },
-
-            // Power Source Selector (Choose either Power Adapter or Battery)
             {
                 label: 'Power Source:',
                 enabled: false
             },
             {
-                label: '🔌 Power Adapter',
+                label: 'Power Adapter',
                 type: 'radio',
                 checked: ac_attached && !status.discharging,
                 enabled: ac_attached,
@@ -362,7 +354,7 @@ const generate_app_menu = async () => {
                 }
             },
             {
-                label: '⚡️ Battery Power',
+                label: 'Battery Power',
                 type: 'radio',
                 checked: !ac_attached || status.discharging,
                 click: async () => {
@@ -372,8 +364,6 @@ const generate_app_menu = async () => {
                 }
             },
             { type: 'separator' },
-
-            // Primary Control
             {
                 label: 'Limit charging',
                 type: 'checkbox',
@@ -385,196 +375,13 @@ const generate_app_menu = async () => {
                 submenu: limit_submenu
             },
             { type: 'separator' },
-
-            // Quick Workflows
-            ... is_travel_active ? [
-                {
-                    label: 'Cancel Travel Mode',
-                    click: async () => {
-                        await cancel_travel_mode()
-                        await refresh_tray()
-                    }
-                },
-                { type: 'separator' }
-            ] : [],
-            ... temporary_workflow ? [
-                {
-                    label: `Active: ${ temporary_workflow.type === 'full_charge' ? 'Charging to 100%' : 'Charge limit paused' }`,
-                    enabled: false
-                },
-                {
-                    label: 'Cancel Temporary Mode',
-                    click: async () => {
-                        await cancel_temporary_workflow()
-                        await refresh_tray()
-                    }
-                },
-                { type: 'separator' }
-            ] : [
-                {
-                    label: 'Charge to 100% Once',
-                    click: async () => {
-                        await start_charge_to_full()
-                        await refresh_tray()
-                    }
-                },
-                {
-                    label: 'Pause charge limit',
-                    submenu: [
-                        {
-                            label: 'For 1 Hour',
-                            click: async () => {
-                                await start_pause_protection( '1h' )
-                                await refresh_tray()
-                            }
-                        },
-                        {
-                            label: 'For 4 Hours',
-                            click: async () => {
-                                await start_pause_protection( '4h' )
-                                await refresh_tray()
-                            }
-                        },
-                        {
-                            label: 'Until Tomorrow (8:00 AM)',
-                            click: async () => {
-                                await start_pause_protection( 'tomorrow' )
-                                await refresh_tray()
-                            }
-                        },
-                        {
-                            label: 'Until Unplugged',
-                            click: async () => {
-                                await start_pause_protection( 'unplugged' )
-                                await refresh_tray()
-                            }
-                        }
-                    ]
-                },
-                {
-                    label: calibrating ? 'Cancel Calibration' : 'Calibrate Battery...',
-                    click: async () => {
-                        if( calibrating ) {
-                            await cancel_calibration()
-                        } else {
-                            await start_calibration()
-                        }
-                        await refresh_tray()
-                    }
-                },
-                { type: 'separator' }
-            ],
-
-            // Battery Health
-            {
-                label: 'Battery Health',
-                submenu: [
-                    {
-                        label: `Condition: ${ health.condition || 'Normal' }`,
-                        enabled: false
-                    },
-                    {
-                        label: `Maximum Capacity: ${ health.capacity || '--' }`,
-                        enabled: false
-                    },
-                    {
-                        label: `Cycle Count: ${ health.cycles ? `${ health.cycles } cycles` : '--' }`,
-                        enabled: false
-                    },
-                    {
-                        label: `Temperature: ${ health.temperature || '--' }`,
-                        enabled: false
-                    }
-                ]
-            },
+            ...exception_items,
             { type: 'separator' },
-
-            // Settings & Merged Tools
             {
-                label: 'Battery King Settings...',
+                label: 'Settings...',
                 accelerator: 'CmdOrCtrl+,',
                 click: open_settings_window
             },
-            {
-                label: 'About & Tools',
-                submenu: [
-                    {
-                        label: `Battery King v${ app.getVersion() }`,
-                        enabled: false
-                    },
-                    {
-                        label: 'Check for Updates...',
-                        click: () => shell.openExternal( URL_RELEASES )
-                    },
-                    { type: 'separator' },
-                    {
-                        label: `Show percentage in menu bar (${ status.percentage }%)`,
-                        type: 'checkbox',
-                        checked: icon_style === 'text',
-                        click: async () => {
-                            toggle_icon_style_setting()
-                            await refresh_tray()
-                        }
-                    },
-                    {
-                        label: 'Desktop notifications',
-                        type: 'checkbox',
-                        checked: notifications_on,
-                        click: async () => {
-                            toggle_notifications_setting()
-                            await refresh_tray()
-                        }
-                    },
-                    {
-                        label: 'Allow force-discharging',
-                        type: 'checkbox',
-                        checked: allow_discharge,
-                        click: async () => {
-                            const success = await update_force_discharge_setting()
-                            if( limiter_on && success ) await restart_limiter()
-                        }
-                    },
-                    { type: 'separator' },
-                    {
-                        label: 'Run diagnostics...',
-                        click: handle_show_diagnostics
-                    },
-                    {
-                        label: 'Open logs folder',
-                        click: open_logs_folder
-                    },
-                    {
-                        label: 'Export diagnostic bundle...',
-                        click: async () => {
-                            await export_diagnostic_bundle()
-                        }
-                    },
-                    { type: 'separator' },
-                    {
-                        label: 'User manual',
-                        click: () => shell.openExternal( URL_README )
-                    },
-                    {
-                        label: 'Command-line usage',
-                        click: () => shell.openExternal( URL_CLI_DOCS )
-                    },
-                    {
-                        label: 'Help and feature requests',
-                        click: () => shell.openExternal( URL_ISSUES )
-                    },
-                    { type: 'separator' },
-                    {
-                        label: 'Uninstall Battery King...',
-                        click: async () => {
-                            const uninstalled = await uninstall_battery()
-                            if( !uninstalled ) return
-                            tray.destroy()
-                            app.quit()
-                        }
-                    }
-                ]
-            },
-            { type: 'separator' },
             {
                 label: 'Quit Battery King',
                 accelerator: 'CmdOrCtrl+Q',

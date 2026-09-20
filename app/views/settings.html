@@ -754,110 +754,172 @@
       pointer-events: none;
       transition: opacity 0.2s ease;
     }
+
+    .sidebar { display: none; }
+    .content-area { width: 100%; }
+    details.advanced {
+      margin-top: 18px;
+    }
+    details.advanced > summary {
+      cursor: pointer;
+      color: var(--text-secondary);
+      font-size: 13px;
+      font-weight: 600;
+      padding: 8px 4px 10px;
+      list-style: none;
+    }
+    details.advanced > summary::-webkit-details-marker { display: none; }
+    details.advanced > summary::before { content: "▸  "; }
+    details.advanced[open] > summary::before { content: "▾  "; }
   </style>
 </head>
 <body>
-
-  <!-- Left Sidebar Navigation -->
-  <aside class="sidebar">
-    <div class="search-box">
-      <span class="search-icon">🔍</span>
-      <input type="text" class="search-input" id="sidebar-search" placeholder="Search" autocomplete="off" spellcheck="false">
-    </div>
-
-    <nav class="nav-list">
-      <button class="nav-btn active" data-tab="tab-charging">
-        <span class="icon-badge badge-green">⚡</span>
-        <span>Charging</span>
-      </button>
-      <button class="nav-btn" data-tab="tab-health">
-        <span class="icon-badge badge-pink">❤️</span>
-        <span>Battery Health</span>
-      </button>
-      <button class="nav-btn" data-tab="tab-notifications">
-        <span class="icon-badge badge-red">🔔</span>
-        <span>Notifications</span>
-      </button>
-      <button class="nav-btn" data-tab="tab-diagnostics">
-        <span class="icon-badge badge-blue">🩺</span>
-        <span>Diagnostics</span>
-      </button>
-      <button class="nav-btn" data-tab="tab-activity">
-        <span class="icon-badge badge-gray">📜</span>
-        <span>Activity Log</span>
-      </button>
-    </nav>
-  </aside>
-
-  <!-- Main Content Area -->
   <main class="content-area">
     <div class="window-header">
       <span class="window-title">Battery King</span>
     </div>
 
     <div class="content-scroll">
+      <h1 class="page-title">Charging</h1>
 
-      <!-- Tab: Charging & Protection -->
-      <section id="tab-charging" class="tab-pane active">
-        <h1 class="page-title">Charging</h1>
+      <div class="group-header">Daily</div>
+      <div class="card">
+        <div class="row">
+          <div class="row-info">
+            <div class="row-title">Limit charging</div>
+            <div class="row-desc">Stop charging at your chosen percentage. The Mac then runs from the adapter.</div>
+          </div>
+          <label class="switch">
+            <input type="checkbox" id="toggle-protection">
+            <span class="slider"></span>
+          </label>
+        </div>
 
-        <!-- Contextual Recommendations Container -->
-        <div class="recommendations-container" id="rec-container"></div>
+        <div class="row">
+          <div class="row-info">
+            <div class="row-title">Charge Limit</div>
+            <div class="row-desc">80% is recommended for everyday use</div>
+          </div>
+          <div class="segmented-control" id="limit-presets">
+            <button class="preset-btn" data-val="70">70%</button>
+            <button class="preset-btn active" data-val="80">80%</button>
+            <button class="preset-btn" data-val="90">90%</button>
+            <button class="preset-btn" data-val="100">100%</button>
+          </div>
+        </div>
 
-        <div class="group-header">Battery Optimization</div>
+        <div class="row" id="row-power-source">
+          <div class="row-info">
+            <div class="row-title" id="power-source-title">Power Source</div>
+            <div class="row-desc" id="power-source-desc">Choose Power Adapter or Battery Power</div>
+          </div>
+          <div class="segmented-control" id="power-source-control">
+            <button class="preset-btn" id="btn-choose-adapter">Power Adapter</button>
+            <button class="preset-btn" id="btn-choose-battery">Battery Power</button>
+          </div>
+        </div>
+      </div>
+      <div class="group-footer">Keeping the battery off 100% while plugged in reduces wear.</div>
+
+      <div class="group-header">Exceptions</div>
+      <div class="card">
+        <div class="row">
+          <div class="row-info">
+            <div class="row-title">Charge to 100% once</div>
+            <div class="row-desc">Full charge now, then go back to your limit</div>
+          </div>
+          <button class="btn btn-primary" id="btn-charge-full">Charge to 100%</button>
+        </div>
+        <div class="row">
+          <div class="row-info">
+            <div class="row-title">Pause until tomorrow</div>
+            <div class="row-desc">Allow normal charging until 8:00 AM</div>
+          </div>
+          <button class="btn btn-secondary" id="btn-pause-tmw">Pause</button>
+        </div>
+      </div>
+
+      <div class="group-header">Battery Health</div>
+      <div class="card">
+        <div class="row">
+          <div class="row-title">Condition</div>
+          <div class="value-label" id="health-condition">--</div>
+        </div>
+        <div class="row">
+          <div class="row-title">Maximum Capacity</div>
+          <div class="value-label" id="health-capacity">--</div>
+        </div>
+        <div class="row">
+          <div class="row-title">Cycle Count</div>
+          <div class="value-label" id="health-cycles">--</div>
+        </div>
+        <div class="row">
+          <div class="row-title">Temperature</div>
+          <div class="value-label" id="health-temp">--</div>
+        </div>
+      </div>
+
+      <div class="group-header">Preferences</div>
+      <div class="card">
+        <div class="row">
+          <div class="row-info">
+            <div class="row-title">Show percentage in menu bar</div>
+            <div class="row-desc">Display the current charge next to the icon</div>
+          </div>
+          <label class="switch">
+            <input type="checkbox" id="toggle-icon-style">
+            <span class="slider"></span>
+          </label>
+        </div>
+        <div class="row">
+          <div class="row-info">
+            <div class="row-title">Notifications</div>
+            <div class="row-desc">Alert when the limit is reached or a full charge finishes</div>
+          </div>
+          <label class="switch">
+            <input type="checkbox" id="master-notifications-switch" checked>
+            <span class="slider"></span>
+          </label>
+        </div>
+      </div>
+
+      <details class="advanced">
+        <summary>Advanced</summary>
+
+        <div class="group-header">Advanced charging</div>
         <div class="card">
           <div class="row">
             <div class="row-info">
-              <div class="row-title">Limit charging</div>
-              <div class="row-desc">Stop charging at your chosen percentage. The Mac then runs from the adapter.</div>
-            </div>
-            <label class="switch">
-              <input type="checkbox" id="toggle-protection">
-              <span class="slider"></span>
-            </label>
-          </div>
-
-          <div class="row">
-            <div class="row-info">
-              <div class="row-title">Charge Limit</div>
-              <div class="row-desc">Set charge ceiling (80% recommended for long-term cell health)</div>
-            </div>
-            <div class="segmented-control" id="limit-presets">
-              <button class="preset-btn" data-val="70">70%</button>
-              <button class="preset-btn" data-val="75">75%</button>
-              <button class="preset-btn active" data-val="80">80%</button>
-              <button class="preset-btn" data-val="85">85%</button>
-              <button class="preset-btn" data-val="90">90%</button>
-              <button class="preset-btn" data-val="100">100%</button>
-            </div>
-          </div>
-
-          <div class="row">
-            <div class="row-info">
-              <div class="row-title">Allow Force-Discharging</div>
-              <div class="row-desc">Drains plugged-in battery down to target level (not recommended in clamshell mode)</div>
+              <div class="row-title">Allow force-discharging</div>
+              <div class="row-desc">Drain down to the limit while plugged in. Avoid in clamshell mode.</div>
             </div>
             <label class="switch">
               <input type="checkbox" id="toggle-discharge">
               <span class="slider"></span>
             </label>
           </div>
+          <div class="row">
+            <div class="row-info">
+              <div class="row-title">Calibrate battery</div>
+              <div class="row-desc">Full discharge and recharge to refresh capacity estimates</div>
+            </div>
+            <button class="btn btn-secondary" id="btn-calibrate">Start…</button>
+          </div>
         </div>
-        <div class="group-footer">Keeping the battery off 100% while plugged in reduces wear and helps it last longer.</div>
 
-        <div class="group-header">Travel Mode (Departure Charging)</div>
+        <div class="group-header">Schedule a full charge</div>
         <div class="card">
           <div class="row" id="travel-plan-row" style="display: none;">
             <div class="row-info">
-              <div class="row-title" id="travel-active-title" style="font-weight: 500; color: var(--accent-blue);">Travel Mode Active</div>
-              <div class="row-desc" id="travel-active-desc">Targeting 100% full charge for departure.</div>
+              <div class="row-title" id="travel-active-title">Full charge scheduled</div>
+              <div class="row-desc" id="travel-active-desc">Charging to 100% before departure.</div>
             </div>
-            <button class="btn btn-secondary" id="btn-cancel-travel">Cancel Travel Plan</button>
+            <button class="btn btn-secondary" id="btn-cancel-travel">Cancel</button>
           </div>
           <div class="row" id="travel-schedule-row">
             <div class="row-info">
-              <div class="row-title">Schedule Full Charge by Departure</div>
-              <div class="row-desc">Charges to 100% just in time for your flight or trip, minimizing time held at high voltage</div>
+              <div class="row-title">Charge to 100% by</div>
+              <div class="row-desc">Reach full just before this time</div>
             </div>
             <div class="btn-group">
               <input type="time" class="time-input" id="travel-target-time">
@@ -865,417 +927,64 @@
             </div>
           </div>
         </div>
-        <div class="group-footer">Reaches 100% immediately before departure, avoiding prolonged resting degradation at full saturation.</div>
 
-        <div class="group-header">Quick Actions</div>
-        <div class="card">
-          <div class="row" id="row-power-source">
-            <div class="row-info">
-              <div class="row-title" id="power-source-title">Active Power Source</div>
-              <div class="row-desc" id="power-source-desc">Choose whether your Mac runs on Power Adapter or Battery</div>
-            </div>
-            <div class="segmented-control" id="power-source-control">
-              <button class="preset-btn" id="btn-choose-adapter">🔌 Power Adapter</button>
-              <button class="preset-btn" id="btn-choose-battery">⚡️ Battery</button>
-            </div>
-          </div>
-
-          <div class="row">
-            <div class="row-info">
-              <div class="row-title">Charge to 100% Once</div>
-              <div class="row-desc">Charges to full once, then goes back to your chosen charge limit</div>
-            </div>
-            <button class="btn btn-primary" id="btn-charge-full">Charge to 100%</button>
-          </div>
-
-          <div class="row">
-            <div class="row-info">
-              <div class="row-title">Pause charge limit</div>
-              <div class="row-desc">Allow charging as usual for a while, then restore your limit</div>
-            </div>
-            <div class="btn-group">
-              <button class="btn btn-secondary" id="btn-pause-1h">1 Hour</button>
-              <button class="btn btn-secondary" id="btn-pause-4h">4 Hours</button>
-              <button class="btn btn-secondary" id="btn-pause-tmw">Tomorrow</button>
-            </div>
-          </div>
-
-          <div class="row">
-            <div class="row-info">
-              <div class="row-title">Battery Calibration</div>
-              <div class="row-desc">Automated full cycle discharge and recharge to calibrate battery capacity gauges</div>
-            </div>
-            <button class="btn btn-secondary" id="btn-calibrate">Start Calibration...</button>
-          </div>
-        </div>
-      </section>
-
-      <!-- Tab: Battery Health -->
-      <section id="tab-health" class="tab-pane">
-        <h1 class="page-title">Battery Health</h1>
-
-        <div class="group-header">Hardware Status</div>
+        <div class="group-header">Support</div>
         <div class="card">
           <div class="row">
-            <div class="row-title">Battery Condition</div>
-            <div class="value-label" id="health-condition">Normal</div>
-          </div>
-          <div class="row">
-            <div class="row-title">Maximum Capacity</div>
-            <div class="value-label" id="health-capacity">--</div>
-          </div>
-          <div class="row">
-            <div class="row-title">Cycle Count</div>
-            <div class="value-label" id="health-cycles">--</div>
-          </div>
-          <div class="row">
-            <div class="row-title">Operating Temperature</div>
-            <div class="value-label" id="health-temp">--</div>
-          </div>
-        </div>
-        <div class="group-footer">This is a measure of battery capacity relative to when it was brand new. Lower capacity may result in fewer hours of usage between charges.</div>
-
-        <div class="group-header">Health Observational Trends</div>
-        <div class="card">
-          <div class="row">
-            <div class="row-title">Average Operating Temperature</div>
-            <div class="value-label" id="trend-avg-temp">--</div>
-          </div>
-          <div class="row">
-            <div class="row-title">Observed Min / Max Temperature</div>
-            <div class="value-label" id="trend-minmax-temp">--</div>
-          </div>
-          <div class="row">
-            <div class="row-title">Historical Health Snapshots</div>
-            <div class="value-label" id="trend-snapshots">--</div>
-          </div>
-        </div>
-
-        <div class="group-header">Charge limit statistics</div>
-        <div class="card">
-          <div class="row">
-            <div class="row-title">Time held at charge limit</div>
-            <div class="value-label" id="stat-bypass-hours">0.0 hours</div>
-          </div>
-          <div class="row">
-            <div class="row-title">Target Reached Events</div>
-            <div class="value-label" id="stat-target-count">0</div>
-          </div>
-          <div class="row">
-            <div class="row-title">Full Charge Sessions</div>
-            <div class="value-label" id="stat-full-sessions">0</div>
-          </div>
-        </div>
-        <div style="margin-top: 8px;">
-          <button class="btn btn-secondary" id="btn-reset-stats">Reset statistics</button>
-        </div>
-      </section>
-
-      <!-- Tab: Notifications -->
-      <section id="tab-notifications" class="tab-pane">
-        <h1 class="page-title">Notifications</h1>
-
-        <!-- App Identity & Master Switch -->
-        <div class="card notif-app-card">
-          <div class="notif-header-content">
-            <img class="notif-app-icon" src="../assets/icon.png" alt="Battery King">
-            <div class="notif-app-meta">
-              <div class="notif-app-name">Battery King</div>
-              <div class="notif-app-desc">Allow notifications, audio alerts, and critical battery warnings</div>
-            </div>
-          </div>
-          <div class="notif-master-row">
             <div class="row-info">
-              <div class="row-title" style="font-weight: 500;">Allow Notifications</div>
-              <div class="row-desc">Deliver battery limit, bypass, and health alerts from Battery King</div>
+              <div class="row-title">Repair installation</div>
+              <div class="row-desc">Fix helper permissions and the background service</div>
             </div>
-            <label class="switch">
-              <input type="checkbox" id="master-notifications-switch" checked>
-              <span class="slider"></span>
-            </label>
+            <button class="btn btn-secondary" id="btn-repair">Repair</button>
+          </div>
+          <div class="row">
+            <div class="row-info">
+              <div class="row-title">Export diagnostic bundle</div>
+              <div class="row-desc">Save logs for troubleshooting</div>
+            </div>
+            <button class="btn btn-secondary" id="btn-export-logs">Export</button>
+          </div>
+          <div class="row">
+            <div class="row-info">
+              <div class="row-title">Uninstall Battery King</div>
+              <div class="row-desc">Remove the helper, daemon, and app</div>
+            </div>
+            <button class="btn btn-secondary" id="btn-uninstall">Uninstall…</button>
           </div>
         </div>
-
-        <div id="notif-subsections">
-          <!-- Alert Style Selector -->
-          <div class="group-header">Battery King Alert Style</div>
-          <div class="card notif-style-card">
-            <div class="alert-style-grid">
-              <div class="alert-style-option" data-style="none" id="style-option-none">
-                <div class="alert-style-preview preview-none">
-                  <div class="preview-menubar"></div>
-                  <div class="preview-dock"></div>
-                </div>
-                <div class="alert-style-radio">
-                  <span class="radio-dot"></span>
-                  <span class="alert-style-label">None</span>
-                </div>
-              </div>
-
-              <div class="alert-style-option active" data-style="banners" id="style-option-banners">
-                <div class="alert-style-preview preview-banners">
-                  <div class="preview-menubar"></div>
-                  <div class="preview-mock-banner">
-                    <div class="preview-banner-icon"></div>
-                    <div class="preview-banner-lines">
-                      <div class="preview-banner-line-1"></div>
-                      <div class="preview-banner-line-2"></div>
-                    </div>
-                  </div>
-                  <div class="preview-dock"></div>
-                </div>
-                <div class="alert-style-radio">
-                  <span class="radio-dot"></span>
-                  <span class="alert-style-label">Banners</span>
-                </div>
-              </div>
-
-              <div class="alert-style-option" data-style="alerts" id="style-option-alerts">
-                <div class="alert-style-preview preview-alerts">
-                  <div class="preview-menubar"></div>
-                  <div class="preview-mock-alert">
-                    <div class="preview-alert-header">
-                      <div class="preview-banner-icon"></div>
-                      <div class="preview-banner-line-1"></div>
-                    </div>
-                    <div class="preview-alert-body"></div>
-                    <div class="preview-alert-buttons">
-                      <div class="preview-alert-btn"></div>
-                      <div class="preview-alert-btn preview-alert-btn-action"></div>
-                    </div>
-                  </div>
-                  <div class="preview-dock"></div>
-                </div>
-                <div class="alert-style-radio">
-                  <span class="radio-dot"></span>
-                  <span class="alert-style-label">Alerts</span>
-                </div>
-              </div>
-            </div>
-          </div>
-          <div class="group-footer">Banners appear in the upper-right corner and go away automatically. Alerts stay on screen until dismissed.</div>
-
-          <!-- Alert Options -->
-          <div class="group-header">Alert Options</div>
-          <div class="card">
-            <div class="row">
-              <div class="row-info">
-                <div class="row-title">Play sound for notifications</div>
-                <div class="row-desc">Play macOS system audio chime (Glass, Sosumi, Basso) with alerts</div>
-              </div>
-              <label class="switch">
-                <input type="checkbox" id="notif-sound-switch" checked>
-                <span class="slider"></span>
-              </label>
-            </div>
-
-            <div class="row">
-              <div class="row-info">
-                <div class="row-title">Badge application icon</div>
-                <div class="row-desc">Show charging and charge-limit indicators on the menu bar icon</div>
-              </div>
-              <label class="switch">
-                <input type="checkbox" id="notif-badge-switch" checked>
-                <span class="slider"></span>
-              </label>
-            </div>
-
-            <div class="row">
-              <div class="row-info">
-                <div class="row-title">Show in Notification Center</div>
-                <div class="row-desc">Retain battery event alerts in macOS Notification Center</div>
-              </div>
-              <label class="switch">
-                <input type="checkbox" id="notif-center-switch" checked>
-                <span class="slider"></span>
-              </label>
-            </div>
-          </div>
-
-          <!-- Event Notifications -->
-          <div class="group-header">Notify Me About</div>
-          <div class="card">
-            <div class="row notif-category-row">
-              <div class="notif-icon-badge badge-green">🎯</div>
-              <div class="row-info">
-                <div class="row-title">Target Limit Reached</div>
-                <div class="row-desc">Alert when charging stops at your limit and the Mac runs from the adapter</div>
-              </div>
-              <label class="switch"><input type="checkbox" id="notify-target_reached"><span class="slider"></span></label>
-            </div>
-
-            <div class="row notif-category-row">
-              <div class="notif-icon-badge badge-orange">🪫</div>
-              <div class="row-info">
-                <div class="row-title">Low Battery Warning (20%)</div>
-                <div class="row-desc">Alert to plug in charger before battery drains deeply</div>
-              </div>
-              <label class="switch"><input type="checkbox" id="notify-low_battery"><span class="slider"></span></label>
-            </div>
-
-            <div class="row notif-category-row">
-              <div class="notif-icon-badge badge-red">🚨</div>
-              <div class="row-info">
-                <div class="row-title">Critical Battery Warning (10%)</div>
-                <div class="row-desc">High-priority warning to prevent sudden system sleep</div>
-              </div>
-              <label class="switch"><input type="checkbox" id="notify-critical_battery"><span class="slider"></span></label>
-            </div>
-
-            <div class="row notif-category-row">
-              <div class="notif-icon-badge badge-blue">⚡</div>
-              <div class="row-info">
-                <div class="row-title">Full Charge Once Completed</div>
-                <div class="row-desc">Notify when a full charge finishes and your charge limit is restored</div>
-              </div>
-              <label class="switch"><input type="checkbox" id="notify-full_charge_once_completed"><span class="slider"></span></label>
-            </div>
-
-            <div class="row notif-category-row">
-              <div class="notif-icon-badge badge-purple">⏸️</div>
-              <div class="row-info">
-                <div class="row-title">Charge limit pause ending</div>
-                <div class="row-desc">Notify when a temporary pause of the charge limit ends</div>
-              </div>
-              <label class="switch"><input type="checkbox" id="notify-pause_ending"><span class="slider"></span></label>
-            </div>
-
-            <div class="row notif-category-row">
-              <div class="notif-icon-badge badge-indigo">🔄</div>
-              <div class="row-info">
-                <div class="row-title">Calibration Lifecycle</div>
-                <div class="row-desc">Notify on discharge cycle, rest periods, and full calibration</div>
-              </div>
-              <label class="switch"><input type="checkbox" id="notify-calibration"><span class="slider"></span></label>
-            </div>
-
-            <div class="row notif-category-row">
-              <div class="notif-icon-badge badge-red-orange">🌡️</div>
-              <div class="row-info">
-                <div class="row-title">Thermal & Temperature Alerts</div>
-                <div class="row-desc">Alert if battery temperature exceeds safe charging thresholds</div>
-              </div>
-              <label class="switch"><input type="checkbox" id="notify-temperature_warning"><span class="slider"></span></label>
-            </div>
-          </div>
-
-          <!-- Notification Test Verification -->
-          <div class="group-header">Notification Verification</div>
-          <div class="card">
-            <div class="row">
-              <div class="row-info">
-                <div class="row-title">Send Test Notification</div>
-                <div class="row-desc">Dispatches a live notification banner with app icon and audio chime to verify delivery</div>
-              </div>
-              <button class="btn btn-secondary" id="btn-test-notification">Send Test Banner</button>
-            </div>
-          </div>
-          <div class="group-footer">Notifications are displayed natively using macOS Notification Center.</div>
-        </div>
-      </section>
-
-      <!-- Tab: Diagnostics -->
-      <section id="tab-diagnostics" class="tab-pane">
-        <h1 class="page-title">System Diagnostics</h1>
-
-        <div class="group-header">Hardware & Background Services</div>
-        <div class="card" id="diag-card">
-          <div id="diag-container">
-            <div style="padding: 16px; color: var(--text-secondary);">Running system verification checks...</div>
-          </div>
-        </div>
-
-        <div class="group-footer">Verify background daemons, SMC control permissions, and battery health telemetry.</div>
-
-        <div style="display: flex; gap: 8px; margin-top: 10px;">
-          <button class="btn btn-primary" id="btn-run-diag">Run Diagnostics</button>
-          <button class="btn btn-secondary" id="btn-repair">Repair Installation</button>
-          <button class="btn btn-secondary" id="btn-export-logs">Export Diagnostic Bundle</button>
-        </div>
-      </section>
-
-      <!-- Tab: Activity Log -->
-      <section id="tab-activity" class="tab-pane">
-        <h1 class="page-title">Activity History</h1>
-
-        <div class="group-header">Recent Battery Events</div>
-        <div class="card">
-          <div class="activity-log" id="activity-list">
-            <div style="padding: 16px; color: var(--text-secondary);">No recent events recorded.</div>
-          </div>
-        </div>
-
-        <div style="margin-top: 14px;">
-          <button class="btn btn-secondary" id="btn-clear-activity">Clear History</button>
-        </div>
-      </section>
-
+      </details>
     </div>
   </main>
 
   <script>
     const { ipcRenderer } = require( 'electron' )
 
-    // Keyboard Shortcuts: Cmd+W or Esc closes the window
     window.addEventListener( 'keydown', ( e ) => {
       if( ( e.metaKey && e.key === 'w' ) || e.key === 'Escape' ) {
         window.close()
       }
     } )
 
-    // Navigation switching
-    const navButtons = document.querySelectorAll( '.nav-btn' )
-    const tabPanes = document.querySelectorAll( '.tab-pane' )
-
-    navButtons.forEach( btn => {
-      btn.addEventListener( 'click', () => {
-        navButtons.forEach( b => b.classList.remove( 'active' ) )
-        tabPanes.forEach( p => p.classList.remove( 'active' ) )
-        btn.classList.add( 'active' )
-        const target = document.getElementById( btn.dataset.tab )
-        if( target ) target.classList.add( 'active' )
-      } )
-    } )
-
-    // Search filter
-    const searchInput = document.getElementById( 'sidebar-search' )
-    if( searchInput ) {
-      searchInput.addEventListener( 'input', ( e ) => {
-        const query = e.target.value.toLowerCase().trim()
-        navButtons.forEach( btn => {
-          const text = btn.textContent.toLowerCase()
-          if( !query || text.includes( query ) ) {
-            btn.style.display = 'flex'
-          } else {
-            btn.style.display = 'none'
-          }
-        } )
-      } )
-    }
-
-    // Refresh UI with main application state
     async function loadData() {
       const data = await ipcRenderer.invoke( 'settings:get_state' )
       if( !data ) return
 
-      // Protection toggle
       const protToggle = document.getElementById( 'toggle-protection' )
       if( protToggle ) protToggle.checked = data.settings.protection_mode === 'enabled'
 
-      // Force discharge toggle
       const disToggle = document.getElementById( 'toggle-discharge' )
       if( disToggle ) disToggle.checked = Boolean( data.settings.force_discharge )
 
-      // Presets
       document.querySelectorAll( '#limit-presets .preset-btn' ).forEach( b => {
-        if( parseInt( b.dataset.val ) === data.settings.charge_limit ) {
-          b.classList.add( 'active' )
-        } else {
-          b.classList.remove( 'active' )
-        }
+        b.classList.toggle( 'active', parseInt( b.dataset.val ) === data.settings.charge_limit )
       } )
 
-      // Power Source Segmented Selection
+      const iconToggle = document.getElementById( 'toggle-icon-style' )
+      if( iconToggle ) iconToggle.checked = ( data.settings.display_style || 'text' ) === 'text'
+
+      const masterSwitch = document.getElementById( 'master-notifications-switch' )
+      if( masterSwitch ) masterSwitch.checked = data.settings.master_notifications !== false
+
       const powerTitle = document.getElementById( 'power-source-title' )
       const powerDesc = document.getElementById( 'power-source-desc' )
       const btnAdapter = document.getElementById( 'btn-choose-adapter' )
@@ -1286,22 +995,22 @@
         const acAttached = data.ac_attached !== false
 
         if( !acAttached ) {
-          if( powerTitle ) powerTitle.textContent = 'Active Power Source: Battery'
-          if( powerDesc ) powerDesc.textContent = 'MacBook is running on battery because no charger is connected.'
+          if( powerTitle ) powerTitle.textContent = 'Power Source'
+          if( powerDesc ) powerDesc.textContent = 'No charger connected — running on battery'
           btnAdapter.disabled = true
           btnAdapter.classList.remove( 'active' )
           btnBattery.disabled = false
           btnBattery.classList.add( 'active' )
         } else if( isDischarging ) {
-          if( powerTitle ) powerTitle.textContent = 'Active Power Source: Battery (Charger Connected)'
-          if( powerDesc ) powerDesc.textContent = 'Drawing strictly from battery while plugged in. Power adapter disconnected via SMC.'
+          if( powerTitle ) powerTitle.textContent = 'Power Source'
+          if( powerDesc ) powerDesc.textContent = 'Charger is connected, but the Mac is using the battery'
           btnAdapter.disabled = false
           btnAdapter.classList.remove( 'active' )
           btnBattery.disabled = false
           btnBattery.classList.add( 'active' )
         } else {
-          if( powerTitle ) powerTitle.textContent = 'Active Power Source: Power Adapter'
-          if( powerDesc ) powerDesc.textContent = 'Drawing from AC power adapter. Click Battery to run on battery while plugged in.'
+          if( powerTitle ) powerTitle.textContent = 'Power Source'
+          if( powerDesc ) powerDesc.textContent = 'Running from the charger'
           btnAdapter.disabled = false
           btnAdapter.classList.add( 'active' )
           btnBattery.disabled = false
@@ -1309,114 +1018,18 @@
         }
       }
 
-      // Recommendations
-      renderRecommendations( data.recommendations || [] )
-
-      // Travel Mode Plan
       renderTravelMode( data.settings.travel_mode )
 
-      // Health
       if( data.health ) {
         const capEl = document.getElementById( 'health-capacity' )
         const cycEl = document.getElementById( 'health-cycles' )
         const condEl = document.getElementById( 'health-condition' )
         const tempEl = document.getElementById( 'health-temp' )
-
         if( capEl ) capEl.textContent = data.health.capacity || 'Unavailable'
         if( cycEl ) cycEl.textContent = data.health.cycles ? `${data.health.cycles} cycles` : 'Unavailable'
         if( condEl ) condEl.textContent = data.health.condition || 'Normal'
         if( tempEl ) tempEl.textContent = data.health.temperature || 'Unavailable'
       }
-
-      // Health Trends
-      if( data.health_trends ) {
-        const avgEl = document.getElementById( 'trend-avg-temp' )
-        const minmaxEl = document.getElementById( 'trend-minmax-temp' )
-        const snapsEl = document.getElementById( 'trend-snapshots' )
-
-        if( avgEl ) avgEl.textContent = data.health_trends.avg_temp_c || 'Collecting data...'
-        if( minmaxEl ) {
-          minmaxEl.textContent = data.health_trends.has_data
-            ? `${data.health_trends.min_temp_c} / ${data.health_trends.max_temp_c}`
-            : 'Collecting data...'
-        }
-        if( snapsEl ) snapsEl.textContent = `${data.health_trends.total_snapshots} recorded`
-      }
-
-      // Statistics
-      if( data.stats ) {
-        const bypassHours = ( ( data.stats.time_protected_seconds || 0 ) / 3600 ).toFixed( 1 )
-        const statBypassEl = document.getElementById( 'stat-bypass-hours' )
-        const statTargetEl = document.getElementById( 'stat-target-count' )
-        const statFullEl = document.getElementById( 'stat-full-sessions' )
-
-        if( statBypassEl ) statBypassEl.textContent = `${bypassHours} hours (Saved Cycles)`
-        if( statTargetEl ) statTargetEl.textContent = `${data.stats.charge_target_reached_count || 0} times`
-        if( statFullEl ) statFullEl.textContent = `${data.stats.full_charge_sessions_count || 0} times`
-      }
-
-      // Notifications
-      const notifs = data.settings.notifications || {}
-      for( const [k, v] of Object.entries( notifs ) ) {
-        const el = document.getElementById( `notify-${k}` )
-        if( el ) el.checked = Boolean( v )
-      }
-
-      const masterNotif = data.settings.master_notifications !== false
-      const masterSwitch = document.getElementById( 'master-notifications-switch' )
-      if( masterSwitch ) masterSwitch.checked = masterNotif
-
-      const subsections = document.getElementById( 'notif-subsections' )
-      if( subsections ) {
-        if( masterNotif ) {
-          subsections.classList.remove( 'notif-subsections-disabled' )
-        } else {
-          subsections.classList.add( 'notif-subsections-disabled' )
-        }
-      }
-
-      const soundSwitch = document.getElementById( 'notif-sound-switch' )
-      if( soundSwitch ) soundSwitch.checked = data.settings.notification_sound !== false
-
-      const currentStyle = data.settings.notification_alert_style || 'banners'
-      document.querySelectorAll( '.alert-style-option' ).forEach( opt => {
-        if( opt.dataset.style === currentStyle ) {
-          opt.classList.add( 'active' )
-        } else {
-          opt.classList.remove( 'active' )
-        }
-      } )
-
-      // Diagnostics
-      if( data.diagnostics ) {
-        renderDiagnostics( data.diagnostics )
-      }
-
-      // Activity
-      if( data.activity ) {
-        renderActivity( data.activity )
-      }
-    }
-
-    function renderRecommendations( recs ) {
-      const container = document.getElementById( 'rec-container' )
-      if( !container ) return
-      container.innerHTML = ''
-      if( recs.length === 0 ) return
-
-      recs.forEach( r => {
-        const div = document.createElement( 'div' )
-        div.className = `rec-card rec-${r.type}`
-        const icon = r.type === 'warning' ? '⚠️' : '💡'
-        div.innerHTML = `
-          <div class="rec-icon">${icon}</div>
-          <div>
-            <div class="rec-title">${r.title}</div>
-            <div class="rec-msg">${r.message}</div>
-          </div>
-        `
-        container.appendChild( div )
-      } )
     }
 
     function renderTravelMode( plan ) {
@@ -1428,61 +1041,23 @@
         if( planRow ) planRow.style.display = 'flex'
         if( scheduleRow ) scheduleRow.style.display = 'none'
         const timeStr = new Date( plan.target_time_ms ).toLocaleTimeString( [], { hour: '2-digit', minute: '2-digit' } )
-        if( activeDesc ) activeDesc.textContent = `Scheduled departure at ${timeStr}. Will charge to 100% just in time.`
+        if( activeDesc ) activeDesc.textContent = `100% by ${timeStr}`
       } else {
         if( planRow ) planRow.style.display = 'none'
         if( scheduleRow ) scheduleRow.style.display = 'flex'
       }
     }
 
-    function renderDiagnostics( checks ) {
-      const container = document.getElementById( 'diag-container' )
-      if( !container ) return
-      container.innerHTML = ''
-      if( !checks || checks.length === 0 ) {
-        container.innerHTML = '<div style="padding:16px;color:var(--text-secondary)">No diagnostic results.</div>'
-        return
-      }
-
-      checks.forEach( c => {
-        const div = document.createElement( 'div' )
-        div.className = 'diag-item'
-        div.innerHTML = `
-          <span class="badge-status badge-${c.status}">${c.status}</span>
-          <div style="flex:1;">
-            <div style="font-size:13px;font-weight:500;">${c.name}</div>
-            <div style="font-size:11px;color:var(--text-secondary);margin-top:2px;">${c.details}</div>
-          </div>
-        `
-        container.appendChild( div )
-      } )
-    }
-
-    function renderActivity( events ) {
-      const container = document.getElementById( 'activity-list' )
-      if( !container ) return
-      container.innerHTML = ''
-      if( !events || events.length === 0 ) {
-        container.innerHTML = '<div style="padding:16px;color:var(--text-secondary)">No recent activity recorded.</div>'
-        return
-      }
-
-      events.forEach( e => {
-        const div = document.createElement( 'div' )
-        div.className = 'activity-item'
-        const time = new Date( e.timestamp ).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })
-        div.innerHTML = `<span class="activity-time">[${time}]</span><strong>${e.title}:</strong> ${e.detail}`
-        container.appendChild( div )
-      } )
-    }
-
-    // UI Event listeners
     document.getElementById( 'toggle-protection' ).addEventListener( 'change', ( e ) => {
       ipcRenderer.invoke( 'settings:set_protection', e.target.checked ? 'enabled' : 'disabled' )
     } )
 
     document.getElementById( 'toggle-discharge' ).addEventListener( 'change', () => {
       ipcRenderer.invoke( 'settings:toggle_discharge' )
+    } )
+
+    document.getElementById( 'toggle-icon-style' ).addEventListener( 'change', ( e ) => {
+      ipcRenderer.invoke( 'settings:set_icon_style', e.target.checked ? 'text' : 'icon' )
     } )
 
     document.querySelectorAll( '#limit-presets .preset-btn' ).forEach( b => {
@@ -1493,19 +1068,16 @@
       } )
     } )
 
-    // Travel Mode Buttons
     document.getElementById( 'btn-schedule-travel' ).addEventListener( 'click', async () => {
       const timeVal = document.getElementById( 'travel-target-time' ).value
       if( !timeVal ) {
-        alert( 'Please choose a departure time.' )
+        alert( 'Choose a time.' )
         return
       }
       const [hours, minutes] = timeVal.split( ':' ).map( Number )
       const target = new Date()
       target.setHours( hours, minutes, 0, 0 )
-      if( target.getTime() <= Date.now() ) {
-        target.setDate( target.getDate() + 1 ) // schedule for tomorrow if time has already passed today
-      }
+      if( target.getTime() <= Date.now() ) target.setDate( target.getDate() + 1 )
       await ipcRenderer.invoke( 'settings:schedule_travel', target.getTime(), 100 )
       await loadData()
     } )
@@ -1515,7 +1087,6 @@
       await loadData()
     } )
 
-    // Quick Action Buttons - Power Source Selection
     const btnAdapter = document.getElementById( 'btn-choose-adapter' )
     const btnBattery = document.getElementById( 'btn-choose-battery' )
 
@@ -1542,92 +1113,25 @@
     document.getElementById( 'btn-charge-full' ).addEventListener( 'click', () => {
       ipcRenderer.invoke( 'settings:charge_full' )
     } )
-
-    document.getElementById( 'btn-pause-1h' ).addEventListener( 'click', () => ipcRenderer.invoke( 'settings:pause', '1h' ) )
-    document.getElementById( 'btn-pause-4h' ).addEventListener( 'click', () => ipcRenderer.invoke( 'settings:pause', '4h' ) )
     document.getElementById( 'btn-pause-tmw' ).addEventListener( 'click', () => ipcRenderer.invoke( 'settings:pause', 'tomorrow' ) )
     document.getElementById( 'btn-calibrate' ).addEventListener( 'click', () => ipcRenderer.invoke( 'settings:calibrate' ) )
-
-    document.getElementById( 'btn-reset-stats' ).addEventListener( 'click', async () => {
-      await ipcRenderer.invoke( 'settings:reset_stats' )
-      await loadData()
-    } )
-
-    document.getElementById( 'btn-run-diag' ).addEventListener( 'click', async () => {
-      document.getElementById( 'diag-container' ).innerHTML = '<div style="padding:16px;color:var(--text-secondary)">Running diagnostic checks...</div>'
-      const res = await ipcRenderer.invoke( 'settings:run_diag' )
-      renderDiagnostics( res )
-    } )
-
     document.getElementById( 'btn-repair' ).addEventListener( 'click', async () => {
       const res = await ipcRenderer.invoke( 'settings:repair' )
       alert( res.message )
-      if( res.diagnostics ) renderDiagnostics( res.diagnostics )
     } )
-
     document.getElementById( 'btn-export-logs' ).addEventListener( 'click', () => ipcRenderer.invoke( 'settings:export_logs' ) )
-    document.getElementById( 'btn-clear-activity' ).addEventListener( 'click', () => {
-      ipcRenderer.invoke( 'settings:clear_activity' )
-      renderActivity( [] )
+    document.getElementById( 'btn-uninstall' ).addEventListener( 'click', async () => {
+      if( !confirm( 'Uninstall Battery King and its helper?' ) ) return
+      await ipcRenderer.invoke( 'settings:uninstall' )
     } )
 
-    // Master Notification Switch
     const masterSwitchEl = document.getElementById( 'master-notifications-switch' )
     if( masterSwitchEl ) {
-      masterSwitchEl.addEventListener( 'change', async ( e ) => {
-        const enabled = e.target.checked
-        await ipcRenderer.invoke( 'settings:set_master_notif', enabled )
-        const subsections = document.getElementById( 'notif-subsections' )
-        if( subsections ) {
-          if( enabled ) subsections.classList.remove( 'notif-subsections-disabled' )
-          else subsections.classList.add( 'notif-subsections-disabled' )
-        }
+      masterSwitchEl.addEventListener( 'change', ( e ) => {
+        ipcRenderer.invoke( 'settings:set_master_notif', e.target.checked )
       } )
     }
 
-    // Alert Style Selector
-    document.querySelectorAll( '.alert-style-option' ).forEach( opt => {
-      opt.addEventListener( 'click', async () => {
-        const style = opt.dataset.style
-        document.querySelectorAll( '.alert-style-option' ).forEach( o => o.classList.remove( 'active' ) )
-        opt.classList.add( 'active' )
-        await ipcRenderer.invoke( 'settings:set_notif_style', style )
-      } )
-    } )
-
-    // Notification Sound Switch
-    const soundSwitchEl = document.getElementById( 'notif-sound-switch' )
-    if( soundSwitchEl ) {
-      soundSwitchEl.addEventListener( 'change', async ( e ) => {
-        await ipcRenderer.invoke( 'settings:set_notif_sound', e.target.checked )
-      } )
-    }
-
-    // Test Notification Button
-    const btnTestEl = document.getElementById( 'btn-test-notification' )
-    if( btnTestEl ) {
-      btnTestEl.addEventListener( 'click', async () => {
-        const origText = btnTestEl.textContent
-        btnTestEl.disabled = true
-        btnTestEl.textContent = 'Sending...'
-        await ipcRenderer.invoke( 'settings:test_notification' )
-        btnTestEl.textContent = 'Sent ✓'
-        setTimeout( () => {
-          btnTestEl.textContent = origText
-          btnTestEl.disabled = false
-        }, 1500 )
-      } )
-    }
-
-    // Checkbox category toggles
-    document.querySelectorAll( '[id^="notify-"]' ).forEach( input => {
-      input.addEventListener( 'change', () => {
-        const cat = input.id.replace( 'notify-', '' )
-        ipcRenderer.invoke( 'settings:set_notif_cat', cat, input.checked )
-      } )
-    } )
-
-    // Load initial state and maintain live 3-second polling
     loadData()
     setInterval( loadData, 3000 )
   </script>

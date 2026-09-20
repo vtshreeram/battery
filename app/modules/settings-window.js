@@ -1,16 +1,13 @@
-const { BrowserWindow, ipcMain } = require( 'electron' )
+const { app, BrowserWindow, ipcMain } = require( 'electron' )
 const path = require( 'node:path' )
 const {
     get_all_settings,
     set_protection_mode,
     set_charge_limit,
     toggle_force_discharge,
-    set_notification_category,
     set_master_notifications,
-    set_notification_sound,
-    set_notification_alert_style
+    set_icon_style_setting
 } = require( './settings' )
-const { send_test_notification } = require( './notifications' )
 const {
     get_battery_status,
     get_battery_health,
@@ -18,18 +15,15 @@ const {
     disable_battery_limiter,
     switch_to_battery,
     switch_to_power,
-    is_ac_attached
+    is_ac_attached,
+    uninstall_battery
 } = require( './battery' )
 const { run_diagnostics } = require( './diagnostics' )
 const { export_diagnostic_bundle } = require( './logs' )
 const { repair_installation } = require( './repair' )
-const { get_recent_activity, clear_activity } = require( './activity-history' )
 const { start_charge_to_full, start_pause_protection } = require( './temporary-charge' )
 const { start_calibration } = require( './calibration' )
 const { schedule_travel_mode, cancel_travel_mode } = require( './scheduler' )
-const { get_health_history, get_health_trends } = require( './health-history' )
-const { get_statistics, reset_statistics } = require( './statistics' )
-const { generate_recommendations } = require( './recommendations' )
 const { log } = require( './helpers' )
 
 let settings_window = null
@@ -42,9 +36,9 @@ const open_settings_window = () => {
     }
 
     settings_window = new BrowserWindow( {
-        width: 780,
-        height: 580,
-        minWidth: 720,
+        width: 560,
+        height: 680,
+        minWidth: 480,
         minHeight: 520,
         resizable: true,
         title: 'Battery King Settings',
@@ -75,15 +69,8 @@ const init_settings_ipc = ( on_change_callback ) => {
         const settings = get_all_settings()
         const status = await get_battery_status().catch( () => null )
         const health = await get_battery_health().catch( () => null )
-        const diagnostics = await run_diagnostics().catch( () => [] )
-        const activity = get_recent_activity( 30 )
-        const stats = get_statistics()
-        const health_trends = get_health_trends()
-        const health_history = get_health_history( 30 )
         const ac_attached = await is_ac_attached().catch( () => true )
-        const recommendations = generate_recommendations( { stats, settings, health, status } )
-
-        return { settings, status, health, diagnostics, activity, stats, health_trends, health_history, recommendations, ac_attached }
+        return { settings, status, health, ac_attached }
     } )
 
     ipcMain.handle( 'settings:switch_to_power', async () => {
@@ -144,24 +131,14 @@ const init_settings_ipc = ( on_change_callback ) => {
         return val
     } )
 
-    ipcMain.handle( 'settings:set_notif_cat', ( _, cat, enabled ) => {
-        return set_notification_category( cat, enabled )
-    } )
-
     ipcMain.handle( 'settings:set_master_notif', ( _, enabled ) => {
         return set_master_notifications( enabled )
     } )
 
-    ipcMain.handle( 'settings:set_notif_sound', ( _, enabled ) => {
-        return set_notification_sound( enabled )
-    } )
-
-    ipcMain.handle( 'settings:set_notif_style', ( _, style ) => {
-        return set_notification_alert_style( style )
-    } )
-
-    ipcMain.handle( 'settings:test_notification', () => {
-        return send_test_notification()
+    ipcMain.handle( 'settings:set_icon_style', ( _, style ) => {
+        const val = set_icon_style_setting( style )
+        if( on_change_callback ) on_change_callback()
+        return val
     } )
 
     ipcMain.handle( 'settings:charge_full', async () => {
@@ -194,11 +171,6 @@ const init_settings_ipc = ( on_change_callback ) => {
         return export_diagnostic_bundle( settings_window )
     } )
 
-    ipcMain.handle( 'settings:clear_activity', () => {
-        clear_activity()
-        return true
-    } )
-
     ipcMain.handle( 'settings:schedule_travel', async ( _, target_time_ms, target_percentage ) => {
         const plan = await schedule_travel_mode( { target_time_ms, target_percentage } )
         if( on_change_callback ) on_change_callback()
@@ -211,9 +183,10 @@ const init_settings_ipc = ( on_change_callback ) => {
         return res
     } )
 
-    ipcMain.handle( 'settings:reset_stats', () => {
-        reset_statistics()
-        return true
+    ipcMain.handle( 'settings:uninstall', async () => {
+        const uninstalled = await uninstall_battery()
+        if( uninstalled ) app.quit()
+        return uninstalled
     } )
 }
 
