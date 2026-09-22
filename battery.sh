@@ -4,7 +4,7 @@
 ## Update management
 ## variables are used by this binary as well at the update script
 ## ###############
-BATTERY_CLI_VERSION="v1.4.2"
+BATTERY_CLI_VERSION="v1.4.5"
 
 # If a script may run as root:
 #   - Reset PATH to safe defaults at the very beginning of the script.
@@ -391,6 +391,23 @@ function smc_hex_to_uint() {
 	echo $((16#$hex))
 }
 
+# bfD0/bfE0 are little-endian. Bytes 50 00 00 00 are 80%. Reading them as one big-endian integer is not 80.
+function smc_le_percent_to_uint() {
+	local hex="$1"
+	local i rev=""
+	hex="${hex//[^0-9A-Fa-f]/}"
+	if [[ -z "$hex" ]]; then
+		return 1
+	fi
+	if (( ${#hex} % 2 )); then
+		hex="0$hex"
+	fi
+	for ((i=${#hex}-2; i>=0; i-=2)); do
+		rev+="${hex:i:2}"
+	done
+	echo $((16#$rev))
+}
+
 function smc_write_hex() {
 	local key=$1
 	local hex_value=$2
@@ -419,9 +436,10 @@ function log_smc_capabilities() {
 	log "SMC capabilities: tahoe=$smc_supports_tahoe legacy=$smc_supports_legacy firmware=$smc_supports_firmware_limit CHIE=$smc_supports_adapter_chie CH0I=$smc_supports_adapter_ch0i CH0J=$smc_supports_adapter_ch0j"
 }
 
-# Percentage as a big-endian ui32 hex string. bfD0/bfE0 read back as that percentage (80 -> 00000050).
+# bfD0/bfE0 are little-endian ui32. 80% is bytes 50 00 00 00.
+# Writing big-endian 00 00 00 50 looks like 80 in the SMC tool, but this firmware then clears bfF0 and charging continues.
 function percentage_to_smc_hex() {
-	printf '000000%02x' "$1"
+	printf '%02x000000' "$1"
 }
 
 function firmware_limit_only() {
@@ -451,9 +469,36 @@ function firmware_limit_matches() {
 	upper_hex="$(smc_read_hex bfD0)" || return 1
 	lower_hex="$(smc_read_hex bfE0)" || return 1
 	arm_n="$(smc_hex_to_uint "$arm_hex")" || return 1
-	upper_n="$(smc_hex_to_uint "$upper_hex")" || return 1
-	lower_n="$(smc_hex_to_uint "$lower_hex")" || return 1
+	upper_n="$(smc_le_percent_to_uint "$upper_hex")" || return 1
+	lower_n="$(smc_le_percent_to_uint "$lower_hex")" || return 1
 	[[ "$arm_n" -eq 2 && "$upper_n" -eq "$upper" && "$lower_n" -eq "$normalized_lower" ]]
+}
+
+# True when bfD0/bfE0 hold the requested band, whether or not bfF0 stayed armed.
+function firmware_percentages_match() {
+	local upper="$1"
+	local lower="$2"
+	local band normalized_lower upper_hex lower_hex upper_n lower_n
+	band="$(normalize_firmware_band "$upper" "$lower")"
+	normalized_lower="${band%% *}"
+	upper="${band##* }"
+	upper_hex="$(smc_read_hex bfD0)" || return 1
+	lower_hex="$(smc_read_hex bfE0)" || return 1
+	upper_n="$(smc_le_percent_to_uint "$upper_hex")" || return 1
+	lower_n="$(smc_le_percent_to_uint "$lower_hex")" || return 1
+	[[ "$upper_n" -eq "$upper" && "$lower_n" -eq "$normalized_lower" ]]
+}
+
+# Keep the adapter connected. Cutting it makes macOS report Battery Power, which undoes an explicit Power Adapter choice.
+# If bfF0 will not stay armed, say so. Do not pause the adapter from the charge-limit loop.
+function enforce_unarmed_firmware_hold() {
+	local upper="$1"
+	local lower="$2"
+	local percent="$3"
+	disable_discharging
+	if ! firmware_limit_matches "$upper" "$lower"; then
+		log "Charge is ${percent}%. The ${upper}% ceiling did not stay armed, and the adapter stays connected."
+	fi
 }
 
 # Firmware ceiling: stop charging at the upper percentage and keep the adapter powering the Mac.
@@ -486,6 +531,11 @@ function apply_firmware_charge_limit() {
 	fi
 	if [[ "$failed" -eq 0 ]] && firmware_limit_matches "$upper" "$lower"; then
 		return 0
+	fi
+	# This firmware stores bfD0/bfE0 and then clears bfF0. The band is present, but it does not stop charging.
+	if [[ "$failed" -eq 0 ]] && firmware_percentages_match "$upper" "$lower"; then
+		log "Firmware stored ${lower}-${upper}% and cleared the arm bit, so the ceiling will not stop charging"
+		return 2
 	fi
 	log "⚠️ Firmware charge limit verification failed for ${lower}-${upper}% (arm=$(smc_read_hex bfF0 || true) upper=$(smc_read_hex bfD0 || true) lower=$(smc_read_hex bfE0 || true))"
 	if [[ -n "$prev_upper" ]]; then
@@ -669,7 +719,13 @@ function disable_charging() {
 		bounds="$(firmware_limit_bounds)"
 		limit_lower="${bounds%% *}"
 		limit_upper="${bounds##* }"
-		apply_firmware_charge_limit "$limit_upper" "$limit_lower" || return 1
+		apply_firmware_charge_limit "$limit_upper" "$limit_lower"
+		local apply_status=$?
+		# 2: percentages stored, arm bit cleared. Charging is not actually stopped yet.
+		if [[ "$apply_status" -eq 2 ]]; then
+			return 2
+		fi
+		[[ "$apply_status" -eq 0 ]] || return 1
 	else
 		log "⚠️ Unable to determine SMC keys for disabling charging"
 		return 1
@@ -925,6 +981,10 @@ if [[ "${BATTERY_TEST_MODE:-}" == "1" ]]; then
 				"$smc_supports_firmware_limit" "$smc_supports_legacy" "$smc_supports_tahoe" "$smc_supports_adapter_ch0j"
 			exit 0
 			;;
+		_test_enforce_hold)
+			enforce_unarmed_firmware_hold "$setting" "${subsetting:-$setting}" "${BATTERY_TEST_PERCENT:?}"
+			exit $?
+			;;
 		_test_key_supported)
 			if smc_key_supported "$setting"; then
 				echo yes
@@ -1138,6 +1198,10 @@ if [[ "$action" == "charging" ]]; then
 		enable_charging
 	elif [[ "$setting" == "off" ]]; then
 		disable_charging
+		charging_status=$?
+		if [[ "$charging_status" -eq 1 ]]; then
+			exit 1
+		fi
 	else
 		log "Error: $setting is not \"on\" or \"off\"."
 		exit 1
@@ -1323,7 +1387,9 @@ if [[ "$action" == "maintain_synchronous" ]]; then
 
 	# Confirm the ceiling before the long loop. `battery maintain` waits for this result.
 	if firmware_limit_only; then
-		if ! disable_charging; then
+		disable_charging
+		ceiling_status=$?
+		if [[ "$ceiling_status" -eq 1 ]]; then
 			printf '%s\n' "fail" > "$maintain_result_file"
 			log "⚠️ Failed to program firmware ceiling before maintenance loop"
 			exit 1
@@ -1368,12 +1434,19 @@ if [[ "$action" == "maintain_synchronous" ]]; then
 
 			if ! firmware_limit_matches "$upper_bound" "$lower_bound"; then
 				log "Firmware ceiling missing or mismatched for ${lower_bound}-${upper_bound}%"
-				if ! disable_charging; then
+				disable_charging
+				ceiling_status=$?
+				if [[ "$ceiling_status" -eq 1 ]]; then
 					log "⚠️ Failed to program firmware ceiling ${lower_bound}-${upper_bound}%"
 				fi
 			fi
+			enforce_unarmed_firmware_hold "$upper_bound" "$lower_bound" "$battery_percentage"
 			if [[ "$battery_percentage" -ge "$upper_bound" && "$notified_target_reached" != true ]]; then
-				send_notification "Battery King" "Target Limit Reached ($upper_bound%)" "Charging stopped. The Mac is running from the adapter." "Glass"
+				if firmware_limit_matches "$upper_bound" "$lower_bound"; then
+					send_notification "Battery King" "Target Limit Reached ($upper_bound%)" "Charging stopped. The Mac is running from the adapter." "Glass"
+				else
+					send_notification "Battery King" "Charge limit not enforced ($upper_bound%)" "The adapter stays connected. This Mac clears the firmware ceiling, so the battery can keep charging." "Glass"
+				fi
 				notified_target_reached=true
 			elif [[ "$battery_percentage" -lt "$lower_bound" ]]; then
 				notified_target_reached=false

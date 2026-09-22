@@ -104,6 +104,14 @@ const resolve_battery_state = ( {
     const inferred_force_discharge = Boolean( status.discharging ) && !on_battery && ac_attached !== false
 
     if( physically_unplugged || on_battery && !force_discharge ) {
+        const hold_target = Number( status.upperLimit ?? status.maintain_percentage )
+        if( protection_mode === 'enabled' && limiter_enabled && Number.isFinite( hold_target ) && Number( status.percentage ) >= hold_target ) {
+            return {
+                state: ProtectionState.ON_BATTERY,
+                label: `Above ${ hold_target }%, charging stopped`,
+                iconState: 'battery'
+            }
+        }
         return {
             state: ProtectionState.ON_BATTERY,
             label: 'Running on Battery',

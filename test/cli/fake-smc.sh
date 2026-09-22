@@ -55,6 +55,10 @@ if [[ "$mode" == "write" ]]; then
 			exit 1
 			;;
 	esac
+	# This Mac's firmware accepts the percentage keys and immediately clears bfF0.
+	if [[ "${SMC_DISARM_BFF0:-}" == "1" && "$key" == "bfF0" && "$value" != "00" ]]; then
+		value="00"
+	fi
 	printf '%s' "$value" > "$STATE/$key"
 	printf '%s %s\n' "$key" "$value" >> "$STATE/writes.log"
 	exit 0

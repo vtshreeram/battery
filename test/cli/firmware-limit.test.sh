@@ -23,6 +23,8 @@ mkdir -p "$STATE"
 cp "$ROOT/test/cli/fake-smc.sh" "$WORK/fake-smc"
 chmod +x "$WORK/fake-smc"
 
+DISARM=""
+
 run_battery() {
 	env \
 		BATTERY_TEST_MODE=1 \
@@ -30,8 +32,10 @@ run_battery() {
 		BATTERY_TEST_SMC="$WORK/fake-smc" \
 		BATTERY_TEST_BATTERY="$ROOT/battery.sh" \
 		BATTERY_TEST_CALIBRATION="$HOLD" \
+		BATTERY_TEST_PERCENT="${BATTERY_TEST_PERCENT:-}" \
 		SMC_STATE_DIR="$STATE" \
 		SMC_FAIL_WRITE_KEYS="$FAIL_KEYS" \
+		SMC_DISARM_BFF0="$DISARM" \
 		bash "$ROOT/battery.sh" "$@"
 }
 
@@ -58,6 +62,8 @@ reset_state() {
 	mkdir -p "$STATE"
 	FAIL_KEYS=""
 	HOLD=""
+	DISARM=""
+	BATTERY_TEST_PERCENT=""
 }
 
 seed_percent_ceiling() {
@@ -73,16 +79,16 @@ reset_state
 seed_percent_ceiling 00000050 0000004e
 run_battery _test_apply_firmware 70 70
 assert_eq "$(read_key bfF0)" "02" "70 arm"
-assert_eq "$(read_key bfD0)" "00000046" "70 upper"
-assert_eq "$(read_key bfE0)" "00000044" "70 lower"
+assert_eq "$(read_key bfD0)" "46000000" "70 upper"
+assert_eq "$(read_key bfE0)" "44000000" "70 lower"
 
 echo "2. armed 70% rewrites to 100%"
 reset_state
 seed_percent_ceiling 00000046 00000044
 run_battery _test_apply_firmware 100 100
 assert_eq "$(read_key bfF0)" "02" "100 arm"
-assert_eq "$(read_key bfD0)" "00000064" "100 upper"
-assert_eq "$(read_key bfE0)" "00000062" "100 lower"
+assert_eq "$(read_key bfD0)" "64000000" "100 upper"
+assert_eq "$(read_key bfE0)" "62000000" "100 lower"
 
 echo "3. maintain stop clears the firmware ceiling"
 reset_state
@@ -207,9 +213,44 @@ if kill -0 "$calibrate_pid" 2>/dev/null; then
 	exit 1
 fi
 assert_eq "$(read_key bfF0)" "02" "restored arm"
-assert_eq "$(read_key bfD0)" "0000004b" "restored 75 upper"
-assert_eq "$(read_key bfE0)" "00000049" "restored 75 lower"
+assert_eq "$(read_key bfD0)" "4b000000" "restored 75 upper"
+assert_eq "$(read_key bfE0)" "49000000" "restored 75 lower"
 assert_eq "$(read_key CH0J)" "00" "restored adapter connected"
 assert_eq "$(cat "$WORK/config/maintain.percentage")" "75" "restored limit file"
+
+echo "18. a cleared arm bit above the limit leaves the adapter connected"
+reset_state
+printf '01' > "$STATE/CH0J"
+printf '00' > "$STATE/bfF0"
+printf '00000050' > "$STATE/bfD0"
+printf '0000004e' > "$STATE/bfE0"
+DISARM=1
+BATTERY_TEST_PERCENT=94
+run_battery _test_enforce_hold 80 78
+assert_eq "$(read_key bfF0)" "00" "arm stayed clear"
+assert_eq "$(read_key CH0J)" "00" "adapter stayed connected above the limit"
+
+echo "19. a cleared arm bit below the limit also leaves the adapter connected"
+reset_state
+printf '01' > "$STATE/CH0J"
+printf '00' > "$STATE/bfF0"
+printf '00000050' > "$STATE/bfD0"
+printf '0000004e' > "$STATE/bfE0"
+DISARM=1
+BATTERY_TEST_PERCENT=70
+run_battery _test_enforce_hold 80 78
+assert_eq "$(read_key CH0J)" "00" "adapter stayed connected below the limit"
+
+echo "20. a ceiling that stays armed does not pause the adapter"
+reset_state
+printf '00' > "$STATE/CH0J"
+printf '02' > "$STATE/bfF0"
+printf '00000050' > "$STATE/bfD0"
+printf '0000004e' > "$STATE/bfE0"
+DISARM=""
+BATTERY_TEST_PERCENT=94
+run_battery _test_enforce_hold 80 78
+assert_eq "$(read_key bfF0)" "02" "arm remained"
+assert_eq "$(read_key CH0J)" "00" "adapter stayed connected"
 
 echo "CLI firmware tests passed"

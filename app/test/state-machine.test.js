@@ -79,10 +79,23 @@ test( 'State Machine - Adapter connected plus SMC discharge is force-discharge',
     assert.equal( res.iconState, 'battery' )
 } )
 
+test( 'State Machine - Above the limit with protection on says charging stopped', () => {
+    const res = resolve_battery_state( {
+        status: { available: true, percentage: 94, discharging: false, maintain_percentage: 80 },
+        limiter_enabled: true,
+        protection_mode: 'enabled',
+        on_battery: true,
+        ac_attached: false
+    } )
+    assert.equal( res.state, ProtectionState.ON_BATTERY )
+    assert.equal( res.label, 'Above 80%, charging stopped' )
+} )
+
 test( 'State Machine - Unplugged discharge is running on battery, not force-discharge', () => {
     const res = resolve_battery_state( {
         status: { available: true, percentage: 97, discharging: true, maintain_percentage: 85 },
-        limiter_enabled: true,
+        limiter_enabled: false,
+        protection_mode: 'disabled',
         on_battery: true,
         ac_attached: false
     } )
