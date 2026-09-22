@@ -4,7 +4,7 @@
 ## Update management
 ## variables are used by this binary as well at the update script
 ## ###############
-BATTERY_CLI_VERSION="v1.4.0"
+BATTERY_CLI_VERSION="v1.4.1"
 
 # If a script may run as root:
 #   - Reset PATH to safe defaults at the very beginning of the script.
@@ -159,13 +159,15 @@ ALL ALL = NOPASSWD: $battery_binary update_silent
 ALL ALL = NOPASSWD: $battery_binary update_silent is_enabled
 
 # Allow passwordless battery-charging–related SMC write commands
-Cmnd_Alias    CHARGING_OFF = $smc_binary -k CH0B -w 02, $smc_binary -k CH0C -w 02, $smc_binary -k CHTE -w 01000000, $smc_binary -k CH0J -w 01
-Cmnd_Alias    CHARGING_ON = $smc_binary -k CH0B -w 00, $smc_binary -k CH0C -w 00, $smc_binary -k CHTE -w 00000000, $smc_binary -k CH0J -w 00
+Cmnd_Alias    CHARGING_OFF = $smc_binary -k CH0B -w 02, $smc_binary -k CH0C -w 02, $smc_binary -k CHTE -w 01000000
+Cmnd_Alias    CHARGING_ON = $smc_binary -k CH0B -w 00, $smc_binary -k CH0C -w 00, $smc_binary -k CHTE -w 00000000
+Cmnd_Alias    FIRMWARE_LIMIT = $smc_binary -k bfF0 -w 00, $smc_binary -k bfF0 -w 02, $smc_binary -k bfD0 -w *, $smc_binary -k bfE0 -w *
 Cmnd_Alias    FORCE_DISCHARGE_OFF = $smc_binary -k CH0I -w 00, $smc_binary -k CHIE -w 00, $smc_binary -k CH0J -w 00
 Cmnd_Alias    FORCE_DISCHARGE_ON = $smc_binary -k CH0I -w 01, $smc_binary -k CHIE -w 08, $smc_binary -k CH0J -w 01
 Cmnd_Alias    LED_CONTROL = $smc_binary -k ACLC -w 04, $smc_binary -k ACLC -w 03, $smc_binary -k ACLC -w 02, $smc_binary -k ACLC -w 01, $smc_binary -k ACLC -w 00
 ALL ALL = NOPASSWD: CHARGING_OFF
 ALL ALL = NOPASSWD: CHARGING_ON
+ALL ALL = NOPASSWD: FIRMWARE_LIMIT
 ALL ALL = NOPASSWD: FORCE_DISCHARGE_OFF
 ALL ALL = NOPASSWD: FORCE_DISCHARGE_ON
 ALL ALL = NOPASSWD: LED_CONTROL
@@ -173,7 +175,7 @@ ALL ALL = NOPASSWD: LED_CONTROL
 # Temporarily keep passwordless SMC reading commands so the old menubar GUI versions don't ask for password on each launch
 # trying to execute 'battery visudo'. There is no harm in removing this, so do it as soon as you believe users are no
 # longer using old versions.
-ALL ALL = NOPASSWD: $smc_binary -k CH0C -r, $smc_binary -k CH0I -r, $smc_binary -k ACLC -r, $smc_binary -k CHIE -r, $smc_binary -k CHTE -r, $smc_binary -k CH0J -r
+ALL ALL = NOPASSWD: $smc_binary -k CH0C -r, $smc_binary -k CH0I -r, $smc_binary -k ACLC -r, $smc_binary -k CHIE -r, $smc_binary -k CHTE -r, $smc_binary -k CH0J -r, $smc_binary -k bfF0 -r, $smc_binary -k bfD0 -r, $smc_binary -k bfE0 -r
 "
 
 # Get parameters
@@ -299,9 +301,67 @@ function smc_write_hex() {
 [[ $($smc_binary -k CHIE -r) =~ "no data" ]] && smc_supports_adapter_chie=false || smc_supports_adapter_chie=true;
 [[ $($smc_binary -k CH0I -r) =~ "no data" ]] && smc_supports_adapter_ch0i=false || smc_supports_adapter_ch0i=true;
 [[ $($smc_binary -k CH0J -r) =~ "no data" || $($smc_binary -k CH0J -r) =~ "Error" ]] && smc_supports_adapter_ch0j=false || smc_supports_adapter_ch0j=true;
+if [[ $($smc_binary -k bfF0 -r) =~ "no data" || $($smc_binary -k bfD0 -r) =~ "no data" || $($smc_binary -k bfE0 -r) =~ "no data" ]]; then
+	smc_supports_firmware_limit=false
+else
+	smc_supports_firmware_limit=true
+fi
 
 function log_smc_capabilities() {
-	log "SMC capabilities: tahoe=$smc_supports_tahoe legacy=$smc_supports_legacy CHIE=$smc_supports_adapter_chie CH0I=$smc_supports_adapter_ch0i CH0J=$smc_supports_adapter_ch0j"
+	log "SMC capabilities: tahoe=$smc_supports_tahoe legacy=$smc_supports_legacy firmware=$smc_supports_firmware_limit CHIE=$smc_supports_adapter_chie CH0I=$smc_supports_adapter_ch0i CH0J=$smc_supports_adapter_ch0j"
+}
+
+# Percentage as a big-endian ui32 hex string. bfD0/bfE0 read back as that percentage (80 -> 00000050).
+function percentage_to_smc_hex() {
+	printf '000000%02x' "$1"
+}
+
+# Firmware ceiling: stop charging at the upper percentage and keep the adapter powering the Mac.
+# bfF0 00 clears the limit, 02 arms it. bfD0 is the upper percentage, bfE0 the lower.
+function apply_firmware_charge_limit() {
+	local upper="$1"
+	local lower="$2"
+	# The ceiling keys want a band. A single percentage keeps a 2-point gap so the pack is not bounced every minute.
+	if [[ "$lower" -ge "$upper" ]]; then
+		lower=$((upper - 2))
+		[[ "$lower" -lt 1 ]] && lower=1
+	fi
+	log "Setting firmware charge limit ${lower}-${upper}%"
+	smc_write_hex bfF0 00 || return 1
+	smc_write_hex bfD0 "$(percentage_to_smc_hex "$upper")" || return 1
+	smc_write_hex bfE0 "$(percentage_to_smc_hex "$lower")" || return 1
+	smc_write_hex bfF0 02 || return 1
+}
+
+function clear_firmware_charge_limit() {
+	log "Clearing firmware charge limit"
+	smc_write_hex bfF0 00 || return 1
+	smc_write_hex bfD0 00000000 || return 1
+	smc_write_hex bfE0 00000000 || return 1
+}
+
+# Resolve the maintain band used when disable_charging runs outside the maintain loop.
+function firmware_limit_bounds() {
+	local upper="${upper_bound:-}"
+	local lower="${lower_bound:-}"
+	local saved
+	if ! valid_percentage "$upper"; then
+		saved="$(get_maintain_percentage)"
+		if valid_percentage_range "$saved"; then
+			lower="${saved%-*}"
+			upper="${saved#*-}"
+		elif valid_percentage "$saved"; then
+			upper="$saved"
+			lower="$saved"
+		else
+			upper=80
+			lower=80
+		fi
+	fi
+	if ! valid_percentage "$lower"; then
+		lower="$upper"
+	fi
+	echo "$lower $upper"
 }
 
 ## #################
@@ -328,8 +388,10 @@ function change_magsafe_led_color() {
 	fi
 }
 
-# Re:discharging, we're using keys uncovered by @howie65: https://github.com/actuallymentor/battery/issues/20#issuecomment-1364540704
-# CH0I seems to be the "disable the adapter" key
+# Adapter isolation keys (CH0J / CHIE / CH0I) disconnect wall power so the Mac runs on the battery.
+# They are only for an explicit Battery Power / force-discharge choice. Limit charging must not write them.
+# CH0I: https://github.com/actuallymentor/battery/issues/20#issuecomment-1364540704
+# CH0J and CHIE read back as 0 when the adapter is connected and as 0x08 or 0x20 when it is isolated.
 function enable_discharging() {
 	log "🔽🔋 Enabling battery discharging"
 	if [[ "$smc_supports_adapter_ch0j" == "true" ]]; then
@@ -344,13 +406,15 @@ function enable_discharging() {
 
 function disable_discharging() {
 	log "🔼🪫 Disabling battery discharging"
+	# Clear every isolation key this Mac has. Clearing only the first one leaves the adapter cut
+	# when the SMC mirrors the state onto CH0J and CHIE.
 	if [[ "$smc_supports_adapter_ch0j" == "true" ]]; then
 		smc_write_hex CH0J 00
-	elif [[ "$smc_supports_adapter_chie" == "true" ]]; then
+	fi
+	if [[ "$smc_supports_adapter_chie" == "true" ]]; then
 		smc_write_hex CHIE 00
-	elif [[ "$smc_supports_adapter_ch0i" == "true" ]]; then
-		smc_write_hex CH0I 00
-	else
+	fi
+	if [[ "$smc_supports_adapter_ch0i" == "true" ]]; then
 		smc_write_hex CH0I 00
 	fi
 	# Keep track of status
@@ -365,8 +429,8 @@ function disable_discharging() {
 		elif [[ "$smc_supports_legacy" == "true" ]]; then
 			smc_write_hex CH0B 00
 			smc_write_hex CH0C 00
-		elif [[ "$smc_supports_adapter_ch0j" == "true" ]]; then
-			smc_write_hex CH0J 00
+		elif [[ "$smc_supports_firmware_limit" == "true" ]]; then
+			log "Disabling discharging: firmware charge limit left armed"
 		else
 			log "⚠️ Unable to reset charging state"
 		fi
@@ -387,8 +451,8 @@ function disable_discharging() {
 		elif [[ "$smc_supports_legacy" == "true" ]]; then
 			smc_write_hex CH0B 00
 			smc_write_hex CH0C 00
-		elif [[ "$smc_supports_adapter_ch0j" == "true" ]]; then
-			smc_write_hex CH0J 00
+		elif [[ "$smc_supports_firmware_limit" == "true" ]]; then
+			log "Disabling discharging: firmware charge limit left armed"
 		else
 			log "⚠️ Unable to reset charging state"
 		fi
@@ -409,8 +473,8 @@ function enable_charging() {
 	elif [[ "$smc_supports_legacy" == "true" ]]; then
 		smc_write_hex CH0B 00
 		smc_write_hex CH0C 00
-	elif [[ "$smc_supports_adapter_ch0j" == "true" ]]; then
-		smc_write_hex CH0J 00
+	elif [[ "$smc_supports_firmware_limit" == "true" ]]; then
+		clear_firmware_charge_limit
 	else
 		log "⚠️ Unable to determine SMC keys for enabling charging"
 	fi
@@ -424,8 +488,12 @@ function disable_charging() {
 	elif [[ "$smc_supports_legacy" == "true" ]]; then
 		smc_write_hex CH0B 02
 		smc_write_hex CH0C 02
-	elif [[ "$smc_supports_adapter_ch0j" == "true" ]]; then
-		smc_write_hex CH0J 01
+	elif [[ "$smc_supports_firmware_limit" == "true" ]]; then
+		local bounds limit_lower limit_upper
+		bounds="$(firmware_limit_bounds)"
+		limit_lower="${bounds%% *}"
+		limit_upper="${bounds##* }"
+		apply_firmware_charge_limit "$limit_upper" "$limit_lower"
 	else
 		log "⚠️ Unable to determine SMC keys for disabling charging"
 	fi
@@ -437,8 +505,8 @@ function get_smc_charging_status() {
 		status_key="CHTE"
 	elif [[ "$smc_supports_legacy" == "true" ]]; then
 		status_key="CH0B"
-	elif [[ "$smc_supports_adapter_ch0j" == "true" ]]; then
-		status_key="CH0J"
+	elif [[ "$smc_supports_firmware_limit" == "true" ]]; then
+		status_key="bfF0"
 	fi
 	hex_status=$(smc_read_hex "$status_key")
 	if [[ -z "$hex_status" ]]; then
@@ -457,12 +525,15 @@ function get_smc_charging_status() {
 		else
 			echo "disabled"
 		fi
-	elif [[ "$smc_supports_adapter_ch0j" == "true" ]]; then
+	elif [[ "$smc_supports_firmware_limit" == "true" ]]; then
+		# bfF0 00 means the ceiling is off and the battery may charge. Any other value means the ceiling is armed.
 		if [[ "$hex_status" == "00" || "$hex_status" == "0" ]]; then
 			echo "enabled"
 		else
 			echo "disabled"
 		fi
+	else
+		echo "unknown"
 	fi
 }
 
@@ -1067,7 +1138,22 @@ if [[ "$action" == "maintain_synchronous" ]]; then
 		is_charging=$(get_smc_charging_status)
 		ac_attached=$(get_charger_state)
 
-		if [[ "$battery_percentage" -ge "$upper_bound" && ("$is_charging" == "enabled" || "$ac_attached" == "1") ]]; then
+		# Firmware mode keeps the ceiling armed. Clearing it below the target would start a charge
+		# and the next pass would arm it again. The SMC owns the band between the two percentages.
+		if [[ "$smc_supports_firmware_limit" == "true" && "$smc_supports_tahoe" != "true" && "$smc_supports_legacy" != "true" ]]; then
+
+			if [[ "$is_charging" != "disabled" ]]; then
+				log "Charge limit not armed, applying firmware ceiling"
+				disable_charging
+			fi
+			if [[ "$battery_percentage" -ge "$upper_bound" && "$notified_target_reached" != true ]]; then
+				send_notification "Battery King" "Target Limit Reached ($upper_bound%)" "Charging stopped. The Mac is running from the adapter." "Glass"
+				notified_target_reached=true
+			elif [[ "$battery_percentage" -lt "$lower_bound" ]]; then
+				notified_target_reached=false
+			fi
+
+		elif [[ "$battery_percentage" -ge "$upper_bound" && ("$is_charging" == "enabled" || "$ac_attached" == "1") ]]; then
 
 			log "Charge at or above $upper_bound%"
 			if [[ "$is_charging" != "disabled" ]]; then

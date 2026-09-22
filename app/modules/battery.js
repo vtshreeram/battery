@@ -18,6 +18,27 @@ const { USER } = process.env
 const binfolder = '/usr/local/co.palokaj.battery'
 const battery = `${ binfolder }/battery`
 
+// Passwordless SMC writes from visudoconfig in battery.sh. Firmware limit keys hold the
+// charge ceiling while the adapter keeps powering the Mac. CH0J/CHIE/CH0I only isolate the adapter.
+const smc_commands = [
+    'bfF0 -w 00',
+    'bfF0 -w 02',
+    'bfD0 -w',
+    'bfE0 -w',
+    'CH0B -w 02',
+    'CH0C -w 02',
+    'CHTE -w 01000000',
+    'CH0B -w 00',
+    'CH0C -w 00',
+    'CHTE -w 00000000',
+    'CH0I -w 00',
+    'CHIE -w 00',
+    'CH0J -w 00',
+    'CH0I -w 01',
+    'CHIE -w 08',
+    'CH0J -w 01'
+]
+
 /**
  * Parse raw CLI status_csv output into structured typed result
  * @param {string} csv_text
@@ -452,6 +473,7 @@ const switch_to_power = async () => {
 }
 
 module.exports = {
+    smc_commands,
     parse_status_csv,
     parse_ioreg_battery,
     parse_system_profiler_battery,
