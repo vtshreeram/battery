@@ -4,7 +4,7 @@
 ## Update management
 ## variables are used by this binary as well at the update script
 ## ###############
-BATTERY_CLI_VERSION="v1.4.5"
+BATTERY_CLI_VERSION="v1.4.6"
 
 # If a script may run as root:
 #   - Reset PATH to safe defaults at the very beginning of the script.
@@ -489,13 +489,27 @@ function firmware_percentages_match() {
 	[[ "$upper_n" -eq "$upper" && "$lower_n" -eq "$normalized_lower" ]]
 }
 
-# Keep the adapter connected. Cutting it makes macOS report Battery Power, which undoes an explicit Power Adapter choice.
-# If bfF0 will not stay armed, say so. Do not pause the adapter from the charge-limit loop.
+# Reconnect wall power without changing the charge ceiling.
+# disable_discharging also decides whether charging is allowed, and that clears a working ceiling.
+function reconnect_adapter() {
+	log "Reconnecting power adapter"
+	if [[ "$smc_supports_adapter_ch0j" == "true" ]]; then
+		smc_write_hex CH0J 00 || return 1
+	fi
+	if [[ "$smc_supports_adapter_chie" == "true" ]]; then
+		smc_write_hex CHIE 00 || return 1
+	fi
+	if [[ "$smc_supports_adapter_ch0i" == "true" ]]; then
+		smc_write_hex CH0I 00 || return 1
+	fi
+}
+
+# Keep the adapter connected. Cutting it makes macOS report Battery Power.
 function enforce_unarmed_firmware_hold() {
 	local upper="$1"
 	local lower="$2"
 	local percent="$3"
-	disable_discharging
+	reconnect_adapter || log "⚠️ Failed to reconnect the power adapter"
 	if ! firmware_limit_matches "$upper" "$lower"; then
 		log "Charge is ${percent}%. The ${upper}% ceiling did not stay armed, and the adapter stays connected."
 	fi
@@ -513,6 +527,17 @@ function apply_firmware_charge_limit() {
 	if firmware_limit_matches "$upper" "$lower"; then
 		log "Firmware ceiling already ${lower}-${upper}%"
 		return 0
+	fi
+	# The percentages are already right and only the arm bit is missing.
+	# Do not write bfF0 00 here. That write turns charging back on.
+	if firmware_percentages_match "$upper" "$lower"; then
+		log "Re-arming firmware ceiling ${lower}-${upper}% without clearing it"
+		smc_write_hex bfF0 02 || return 1
+		if firmware_limit_matches "$upper" "$lower"; then
+			return 0
+		fi
+		log "Firmware stored ${lower}-${upper}% and cleared the arm bit, so the ceiling will not stop charging"
+		return 2
 	fi
 	prev_arm="$(smc_read_hex bfF0 || true)"
 	prev_upper="$(smc_read_hex bfD0 || true)"
@@ -663,9 +688,13 @@ function disable_discharging() {
 
 	elif [[ "$battery_percentage" -ge "$setting" && "$is_charging" == "enabled" ]]; then
 
-		log "Disabling discharging: Charge above $setting, disabling charging"
-		disable_charging
-		change_magsafe_led_color "green"
+		if firmware_limit_only; then
+			log "Disabling discharging: leaving the firmware ceiling unchanged"
+		else
+			log "Disabling discharging: Charge above $setting, disabling charging"
+			disable_charging
+			change_magsafe_led_color "green"
+		fi
 
 	elif [[ "$battery_percentage" -lt "$setting" && "$is_charging" == "disabled" ]]; then
 
@@ -1659,7 +1688,7 @@ if [[ "$action" == "maintain" ]]; then
 
 	fi
 
-	disable_discharging
+	reconnect_adapter
 
 	stop_maintain_processes
 	if test -f "$calibrate_pidfile"; then
