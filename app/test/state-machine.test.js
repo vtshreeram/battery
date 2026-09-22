@@ -36,7 +36,7 @@ test( 'State Machine - Charge to 100% Once workflow', () => {
         temporary_workflow: { type: 'full_charge' }
     } )
     assert.equal( completedRes.state, ProtectionState.TARGET_REACHED )
-    assert.equal( completedRes.iconState, 'protected' )
+    assert.equal( completedRes.iconState, 'plugged' )
 } )
 
 test( 'State Machine - Paused workflow', () => {
@@ -64,7 +64,7 @@ test( 'State Machine - Force discharging state', () => {
         on_battery: false
     } )
     assert.equal( res.state, ProtectionState.FORCE_DISCHARGING )
-    assert.equal( res.iconState, 'battery' )
+    assert.equal( res.iconState, 'discharging' )
     assert.match( res.label, /Discharging to 80%/ )
 } )
 
@@ -76,7 +76,7 @@ test( 'State Machine - Adapter connected plus SMC discharge is force-discharge',
         ac_attached: true
     } )
     assert.equal( res.state, ProtectionState.FORCE_DISCHARGING )
-    assert.equal( res.iconState, 'battery' )
+    assert.equal( res.iconState, 'discharging' )
 } )
 
 test( 'State Machine - Above the limit with protection on says charging stopped', () => {
@@ -146,7 +146,7 @@ test( 'State Machine - Adapter bypass when at or above target', () => {
         on_battery: false
     } )
     assert.equal( res.state, ProtectionState.BYPASS )
-    assert.equal( res.iconState, 'protected' )
+    assert.equal( res.iconState, 'plugged' )
 } )
 
 test( 'State Machine - Charging toward target', () => {

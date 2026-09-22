@@ -12,6 +12,18 @@ const { record_event } = require( './activity-history' )
 const { log } = require( './helpers' )
 
 /**
+ * Limit charging during Charge to 100% Once or a pause should end that temporary
+ * action and return to the saved limit. Otherwise it follows the normal on/off toggle.
+ */
+function action_for_limit_charging_click( { workflow, limiter_on, charge_limit } ) {
+    if( workflow && ( workflow.type === 'full_charge' || workflow.type === 'pause' ) ) {
+        return { action: 'restore', limit: workflow.restore_limit }
+    }
+    if( limiter_on ) return { action: 'disable' }
+    return { action: 'enable', limit: charge_limit }
+}
+
+/**
  * Start Charge to 100% Once workflow
  */
 const start_charge_to_full = async () => {
@@ -195,6 +207,7 @@ const evaluate_temporary_workflow = async ( status, on_battery ) => {
 }
 
 module.exports = {
+    action_for_limit_charging_click,
     start_charge_to_full,
     start_pause_protection,
     cancel_temporary_workflow,

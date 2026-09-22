@@ -4,7 +4,7 @@
 ## Update management
 ## variables are used by this binary as well at the update script
 ## ###############
-BATTERY_CLI_VERSION="v1.4.6"
+BATTERY_CLI_VERSION="v1.4.10"
 
 # If a script may run as root:
 #   - Reset PATH to safe defaults at the very beginning of the script.
@@ -590,10 +590,57 @@ function clear_firmware_charge_limit() {
 	fi
 }
 
+# The gauge SOC the firmware compares with bfD0. The menu percentage can sit a little higher.
+function read_firmware_soc() {
+	if [[ "${BATTERY_TEST_MODE:-}" == "1" ]]; then
+		if [[ -n "${BATTERY_TEST_PERCENT:-}" ]]; then
+			echo "$BATTERY_TEST_PERCENT"
+		fi
+		return
+	fi
+	local soc
+	soc="$(ioreg -rn AppleSmartBattery -w0 2>/dev/null | tr ',' '\n' | sed -n 's/.*"StateOfCharge"=\([0-9][0-9]*\).*/\1/p' | head -1)"
+	if valid_percentage "$soc"; then
+		echo "$soc"
+	fi
+}
+
+# While the charge is above the user's limit, park the firmware ceiling one point under the
+# current gauge reading. Aiming it straight at 80 makes this firmware run the Mac from the
+# battery until the pack falls all the way there. A close ceiling only stops charging.
+function firmware_ceiling_for_hold() {
+	local user_lower="$1"
+	local user_upper="$2"
+	local percent="$3"
+	local fw_upper fw_lower
+	if (( percent > user_upper )); then
+		# Sit on the current gauge. A ceiling below it makes this firmware
+		# run the Mac from the battery and the percentage falls quickly.
+		fw_upper=$percent
+		if (( fw_upper < user_upper )); then
+			fw_upper=$user_upper
+		fi
+		fw_lower=$((fw_upper - 2))
+		if (( fw_lower < 1 )); then
+			fw_lower=1
+		fi
+	else
+		fw_upper=$user_upper
+		fw_lower=$user_lower
+		if (( fw_lower >= fw_upper )); then
+			fw_lower=$((fw_upper - 2))
+			if (( fw_lower < 1 )); then
+				fw_lower=1
+			fi
+		fi
+	fi
+	echo "$fw_lower $fw_upper"
+}
+
 # Resolve the maintain band used when disable_charging runs outside the maintain loop.
 function firmware_limit_bounds() {
-	local upper="${upper_bound:-}"
-	local lower="${lower_bound:-}"
+	local upper="${active_fw_upper:-${upper_bound:-}}"
+	local lower="${active_fw_lower:-${lower_bound:-}}"
 	local saved
 	if ! valid_percentage "$upper"; then
 		saved="$(get_maintain_percentage)"
@@ -824,6 +871,10 @@ function get_smc_discharging_status() {
 ## ###############
 
 function get_battery_percentage() {
+	if [[ "${BATTERY_TEST_MODE:-}" == "1" ]]; then
+		echo "${BATTERY_TEST_PERCENT:-50}"
+		return
+	fi
 	battery_percentage=$(pmset -g batt | tail -n1 | awk '{print $3}' | tr -d '%;')
 	echo "$battery_percentage"
 }
@@ -1009,6 +1060,10 @@ if [[ "${BATTERY_TEST_MODE:-}" == "1" ]]; then
 			printf 'firmware=%s legacy=%s tahoe=%s ch0j=%s\n' \
 				"$smc_supports_firmware_limit" "$smc_supports_legacy" "$smc_supports_tahoe" "$smc_supports_adapter_ch0j"
 			exit 0
+			;;
+		_test_hold_band)
+			firmware_ceiling_for_hold "$setting" "$subsetting" "${BATTERY_TEST_PERCENT:?}"
+			exit $?
 			;;
 		_test_enforce_hold)
 			enforce_unarmed_firmware_hold "$setting" "${subsetting:-$setting}" "${BATTERY_TEST_PERCENT:?}"
@@ -1414,6 +1469,17 @@ if [[ "$action" == "maintain_synchronous" ]]; then
 
 	echo $$ > "$pidfile"
 
+	battery_percentage=$(get_battery_percentage)
+	# Use the menu percentage. The firmware gauge sits lower, and a ceiling under the
+	# menu percentage makes the Mac run from the battery.
+	hold_percent="$battery_percentage"
+	fw_soc="$(read_firmware_soc || true)"
+	if [[ -n "$fw_soc" && "$fw_soc" -gt "$hold_percent" ]]; then
+		hold_percent="$fw_soc"
+	fi
+	read -r active_fw_lower active_fw_upper <<< "$(firmware_ceiling_for_hold "$lower_bound" "$upper_bound" "$hold_percent")"
+	log "Firmware hold ${active_fw_lower}-${active_fw_upper}% for charge ${battery_percentage}% (limit ${upper_bound}%)"
+
 	# Confirm the ceiling before the long loop. `battery maintain` waits for this result.
 	if firmware_limit_only; then
 		disable_charging
@@ -1437,9 +1503,6 @@ if [[ "$action" == "maintain_synchronous" ]]; then
 		log "Not triggering discharge as it is not requested"
 	fi
 
-	# Start charging
-	battery_percentage=$(get_battery_percentage)
-
 	if [[ "$is_range" == true ]]; then
 		log "Maintaining battery between $lower_bound% and $upper_bound% from $battery_percentage%"
 	else
@@ -1461,15 +1524,21 @@ if [[ "$action" == "maintain_synchronous" ]]; then
 		# bfF0 is not enough: changing 80 to 70 must rewrite bfD0/bfE0.
 		if firmware_limit_only; then
 
-			if ! firmware_limit_matches "$upper_bound" "$lower_bound"; then
-				log "Firmware ceiling missing or mismatched for ${lower_bound}-${upper_bound}%"
+			hold_percent="$battery_percentage"
+			fw_soc="$(read_firmware_soc || true)"
+			if [[ -n "$fw_soc" && "$fw_soc" -gt "$hold_percent" ]]; then
+				hold_percent="$fw_soc"
+			fi
+			read -r active_fw_lower active_fw_upper <<< "$(firmware_ceiling_for_hold "$lower_bound" "$upper_bound" "$hold_percent")"
+			if ! firmware_limit_matches "$active_fw_upper" "$active_fw_lower"; then
+				log "Firmware ceiling missing or mismatched for ${active_fw_lower}-${active_fw_upper}% (charge ${battery_percentage}%, limit ${upper_bound}%)"
 				disable_charging
 				ceiling_status=$?
 				if [[ "$ceiling_status" -eq 1 ]]; then
-					log "⚠️ Failed to program firmware ceiling ${lower_bound}-${upper_bound}%"
+					log "⚠️ Failed to program firmware ceiling ${active_fw_lower}-${active_fw_upper}%"
 				fi
 			fi
-			enforce_unarmed_firmware_hold "$upper_bound" "$lower_bound" "$battery_percentage"
+			enforce_unarmed_firmware_hold "$active_fw_upper" "$active_fw_lower" "$battery_percentage"
 			if [[ "$battery_percentage" -ge "$upper_bound" && "$notified_target_reached" != true ]]; then
 				if firmware_limit_matches "$upper_bound" "$lower_bound"; then
 					send_notification "Battery King" "Target Limit Reached ($upper_bound%)" "Charging stopped. The Mac is running from the adapter." "Glass"
@@ -1624,6 +1693,12 @@ function wait_for_maintain_result() {
 	return 1
 }
 
+# Start a long-running helper in its own session. The menu app's command timeout
+# must not take the maintenance loop down with the short-lived launcher.
+function start_detached() {
+	perl -e 'use POSIX qw(setsid); setsid() or die "setsid: $!\n"; exec @ARGV or die "exec: $!\n"' -- "$@" >> "$logfile" 2>&1 &
+}
+
 function launchctl_invoke() {
 	if [[ "${BATTERY_TEST_MODE:-}" == "1" ]]; then
 		mkdir -p "$configfolder"
@@ -1703,14 +1778,14 @@ if [[ "$action" == "maintain" ]]; then
 	# Start maintenance script
 	if [ "$is_voltage" = true ]; then
 		log "Starting battery maintenance at ${setting}V ±${subsetting}V"
-		nohup "$battery_binary" maintain_voltage_synchronous "$setting" "$subsetting" >> "$logfile" &
+		start_detached "$battery_binary" maintain_voltage_synchronous "$setting" "$subsetting"
 	else
 		if valid_percentage_range "$setting"; then
 			log "Starting battery maintenance between ${setting/-/% and }%"
 		else
 			log "Starting battery maintenance at $setting% $subsetting"
 		fi
-		nohup "$battery_binary" maintain_synchronous "$setting" "$subsetting" >> "$logfile" &
+		start_detached "$battery_binary" maintain_synchronous "$setting" "$subsetting"
 	fi
 
 	# Store pid of maintenance process and setting

@@ -240,10 +240,15 @@ const enable_battery_limiter = async ( targetLimit ) => {
         const allow_force_discharge = get_force_discharge_setting()
         log( `[Battery] Enabling battery limiter at ${ requested }% (force-discharge: ${ allow_force_discharge })` )
 
-        await exec_async(
-            `${ battery } maintain ${ requested }${ allow_force_discharge ? ' --force-discharge' : '' }`,
-            8000
-        )
+        try {
+            await exec_async(
+                `${ battery } maintain ${ requested }${ allow_force_discharge ? ' --force-discharge' : '' }`,
+                20000
+            )
+        } catch ( exec_error ) {
+            if( exec_error?.code !== 'ETIMEDOUT' ) throw exec_error
+            log( '[Battery] maintain launcher timed out; checking whether the limiter is running' )
+        }
 
         const status = await get_battery_status()
         if( !observed_limit_matches( status, requested ) ) {

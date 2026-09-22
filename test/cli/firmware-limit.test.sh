@@ -253,4 +253,20 @@ run_battery _test_enforce_hold 80 78
 assert_eq "$(read_key bfF0)" "02" "arm remained"
 assert_eq "$(read_key CH0J)" "00" "adapter stayed connected"
 
+echo "21. a full battery is parked near itself instead of forced down to 80"
+reset_state
+BATTERY_TEST_PERCENT=98
+band="$(run_battery _test_hold_band 78 80)"
+assert_eq "$band" "96 98" "park near 98"
+
+echo "22. a battery already at the limit uses the requested band"
+BATTERY_TEST_PERCENT=80
+band="$(run_battery _test_hold_band 78 80)"
+assert_eq "$band" "78 80" "hold at the limit"
+
+echo "23. a battery below the limit still charges toward the limit"
+BATTERY_TEST_PERCENT=70
+band="$(run_battery _test_hold_band 78 80)"
+assert_eq "$band" "78 80" "charge up to the limit"
+
 echo "CLI firmware tests passed"

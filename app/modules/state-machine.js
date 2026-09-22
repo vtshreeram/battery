@@ -69,7 +69,7 @@ const resolve_battery_state = ( {
             return {
                 state: ProtectionState.TARGET_REACHED,
                 label: 'Full charge reached (100%)',
-                iconState: 'protected'
+                iconState: 'plugged'
             }
         }
         return {
@@ -84,7 +84,7 @@ const resolve_battery_state = ( {
         return {
             state: ProtectionState.PAUSED,
             label: 'Charge limit paused',
-            iconState: on_battery ? 'battery' : 'charging'
+            iconState: on_battery ? 'battery' : 'paused'
         }
     }
 
@@ -93,7 +93,7 @@ const resolve_battery_state = ( {
         return {
             state: ProtectionState.TEMP_WARNING,
             label: `High battery temperature (${ temperature_c }°C)`,
-            iconState: on_battery ? 'battery' : limiter_enabled ? 'protected' : 'charging'
+            iconState: on_battery ? 'battery' : status.charging ? 'charging' : 'plugged'
         }
     }
 
@@ -125,7 +125,7 @@ const resolve_battery_state = ( {
             label: status.maintain_percentage
                 ? `Discharging to ${ status.maintain_percentage }%`
                 : 'Discharging',
-            iconState: 'battery'
+            iconState: 'discharging'
         }
     }
 
@@ -134,7 +134,7 @@ const resolve_battery_state = ( {
         return {
             state: ProtectionState.DISABLED,
             label: status.charging ? 'Charging (limit off)' : 'Charge limit off',
-            iconState: status.charging ? 'charging' : 'battery'
+            iconState: status.charging ? 'charging' : 'plugged'
         }
     }
 
@@ -148,7 +148,7 @@ const resolve_battery_state = ( {
         return {
             state: ProtectionState.MONITORING,
             label: 'Protection on',
-            iconState: 'protected'
+            iconState: 'plugged'
         }
     }
 
@@ -157,7 +157,7 @@ const resolve_battery_state = ( {
             return {
                 state: ProtectionState.BYPASS,
                 label: `Holding between ${ lower }% and ${ target }% (using adapter)`,
-                iconState: 'protected'
+                iconState: 'plugged'
             }
         }
         if( current < lower ) {
@@ -170,7 +170,7 @@ const resolve_battery_state = ( {
         return {
             state: ProtectionState.MONITORING,
             label: `Holding between ${ lower }% and ${ target }%`,
-            iconState: 'protected'
+            iconState: 'plugged'
         }
     }
 
@@ -178,7 +178,7 @@ const resolve_battery_state = ( {
         return {
             state: ProtectionState.BYPASS,
             label: `Holding at ${ target }% (using adapter)`,
-            iconState: 'protected'
+            iconState: 'plugged'
         }
     }
 
@@ -193,7 +193,7 @@ const resolve_battery_state = ( {
     return {
         state: ProtectionState.MONITORING,
         label: `Holding at ${ target }%`,
-        iconState: 'protected'
+        iconState: 'plugged'
     }
 }
 

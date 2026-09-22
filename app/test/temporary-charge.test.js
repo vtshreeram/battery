@@ -4,7 +4,8 @@ const {
     start_charge_to_full,
     start_pause_protection,
     cancel_temporary_workflow,
-    evaluate_temporary_workflow
+    evaluate_temporary_workflow,
+    action_for_limit_charging_click
 } = require( '../modules/temporary-charge' )
 const {
     get_temporary_workflow,
@@ -71,4 +72,13 @@ test( 'TemporaryCharge - start_pause_protection sets duration and cancels correc
     assert.equal( cancelled, true )
     assert.equal( get_temporary_workflow(), null )
     assert.equal( get_charge_limit(), 85 )
+} )
+
+test( 'Limit charging during Charge to 100% Once restores the saved limit', () => {
+    const decision = action_for_limit_charging_click( {
+        workflow: { type: 'full_charge', restore_limit: 80, restore_mode: 'enabled' },
+        limiter_on: true,
+        charge_limit: 100
+    } )
+    assert.deepEqual( decision, { action: 'restore', limit: 80 } )
 } )

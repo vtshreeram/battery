@@ -110,7 +110,7 @@ const generate_diagnostic_bundle = async () => {
         `                 BATTERY DIAGNOSTIC LOG BUNDLE                  `,
         `================================================================`,
         `Timestamp:            ${ timestamp }`,
-        `App Version:          v${ app.getVersion ? app.getVersion() : '1.4.6' }`,
+        `App Version:          v${ app.getVersion ? app.getVersion() : '1.4.10' }`,
         `CLI Version:          ${ cli_version }`,
         `System:               ${ os_info }`,
         `Hardware Model:       ${ os.cpus()[ 0 ]?.model || 'Apple Silicon' }`,

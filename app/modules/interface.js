@@ -29,7 +29,8 @@ const {
     start_charge_to_full,
     start_pause_protection,
     cancel_temporary_workflow,
-    evaluate_temporary_workflow
+    evaluate_temporary_workflow,
+    action_for_limit_charging_click
 } = require( './temporary-charge' )
 const {
     is_calibration_running,
@@ -54,9 +55,7 @@ let refresh_in_flight = false
 let refresh_queued = false
 
 const apply_tray_visuals = ( iconState, title, tooltip, percent = null ) => {
-    const visual_key = iconState === 'charging' || iconState === 'protected'
-        ? iconState
-        : `battery-${ round_battery_level( percent ) }`
+    const visual_key = `${ iconState }-${ round_battery_level( percent ) }`
     if( visual_key !== last_icon_state ) {
         tray.setImage( get_status_icon( iconState, percent ) )
         last_icon_state = visual_key
@@ -107,12 +106,22 @@ async function disable_limiter() {
 
 async function toggle_limiter() {
     try {
+        const workflow = get_temporary_workflow()
         const limiter_on = await is_limiter_enabled()
-        if( limiter_on ) {
+        const decision = action_for_limit_charging_click( {
+            workflow,
+            limiter_on,
+            charge_limit: get_charge_limit()
+        } )
+        if( decision.action === 'restore' ) {
+            log( `[Interface] Limit charging clicked during ${ workflow.type }; restoring ${ decision.limit }%` )
+            await cancel_temporary_workflow()
+        } else if( decision.action === 'disable' ) {
             await disable_limiter()
         } else {
             await enable_limiter()
         }
+        await refresh_tray()
     } catch ( e ) {
         log( `[Interface] Error in toggle_limiter: `, e )
     }
