@@ -1,4 +1,5 @@
 #!/bin/bash
+set -euo pipefail
 
 echo -e "🔋 Starting battery update\n"
 
@@ -13,6 +14,12 @@ trap 'exit 130' INT
 
 # Define the installation directory for the battery background executables
 binfolder="/usr/local/co.palokaj.battery"
+
+# Release integrity follow-up: this updater still downloads battery.sh from the
+# mutable main branch. A production updater should pin a signed tag or GitHub
+# release asset and check a checksum before replacing the installed script.
+# See docs/release-integrity.md. The download below is staged and checked for a
+# version string before it replaces the installed file.
 
 is_launched_by_gui_app() {
 	# Determine the process group ID (PGID) of the current process
@@ -38,7 +45,16 @@ fi
 # Trigger reinstall for Terminal users to update from version 1_3_2 or earlier.
 if [[ $EUID -ne 0 && ! -x "$binfolder/battery" ]]; then
 	echo -e "💡 This battery update requires a full reinstall...\n"
-	curl -sS "https://raw.githubusercontent.com/vtshreeram/battery/main/setup.sh" | bash
+	reinstall_script="$(mktemp)"
+	download_status=0
+	curl -fsSL -o "$reinstall_script" "https://raw.githubusercontent.com/vtshreeram/battery/main/setup.sh" || download_status=$?
+	if [[ "$download_status" -ne 0 || ! -s "$reinstall_script" ]]; then
+		rm -f "$reinstall_script"
+		echo "❌ Failed to download setup.sh"
+		exit "${download_status:-1}"
+	fi
+	bash "$reinstall_script"
+	rm -f "$reinstall_script"
 	"$binfolder/battery" maintain recover
 	exit 0
 fi
@@ -52,18 +68,41 @@ updatefolder="$tempfolder/battery"
 mkdir -p "$updatefolder"
 
 echo "[ 2 ] Downloading the latest battery version"
-if ! curl -sS -o "$updatefolder/battery.sh" https://raw.githubusercontent.com/vtshreeram/battery/main/battery.sh; then
-	err=$?
+download_status=0
+curl -fsSL -o "$updatefolder/battery.sh" "https://raw.githubusercontent.com/vtshreeram/battery/main/battery.sh" || download_status=$?
+if [[ "$download_status" -ne 0 ]]; then
 	echo -e "\n❌ Failed to download the update.\n"
-	exit "$err"
+	exit "$download_status"
+fi
+if [[ ! -s "$updatefolder/battery.sh" ]]; then
+	echo -e "\n❌ Downloaded update was empty.\n"
+	exit 1
+fi
+if ! head -n 1 "$updatefolder/battery.sh" | grep -q '^#!/bin/bash'; then
+	echo -e "\n❌ Downloaded update is not the battery script.\n"
+	exit 1
+fi
+if ! grep -q '^BATTERY_CLI_VERSION="' "$updatefolder/battery.sh"; then
+	echo -e "\n❌ Downloaded update has no version string.\n"
+	exit 1
 fi
 
 echo "[ 3 ] Writing script to $binfolder/battery"
 sudo install -d -m 755 -o root -g wheel "$binfolder"
 sudo install -m 755 -o root -g wheel "$updatefolder/battery.sh" "$binfolder/battery"
+if [[ ! -x "$binfolder/battery" ]]; then
+	echo "❌ Installed battery script is not executable"
+	exit 1
+fi
+owner="$(stat -f '%u' "$binfolder/battery" 2>/dev/null || stat -c '%u' "$binfolder/battery")"
+if [[ "$owner" != "0" ]]; then
+	echo "❌ Installed battery script is not owned by root"
+	exit 1
+fi
 
 echo "[ 4 ] Remove temporary folder"
 rm -rf "$tempfolder"
+trap - EXIT
 
 echo -e "\n🎉 Battery tool updated.\n"
 exit 0

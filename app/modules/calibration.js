@@ -4,7 +4,6 @@ const os = require( 'node:os' )
 const { spawn } = require( 'node:child_process' )
 const { log, alert, confirm } = require( './helpers' )
 const { get_charge_limit, get_protection_mode } = require( './settings' )
-const { enable_battery_limiter } = require( './battery' )
 const { record_event } = require( './activity-history' )
 const { send_notification } = require( './notifications' )
 const { BATTERY_BINARY } = require( './diagnostics' )
@@ -85,36 +84,72 @@ const start_calibration = async () => {
     }
 }
 
+function process_is_alive( pid ) {
+    try {
+        process.kill( pid, 0 )
+        return true
+    } catch ( err ) {
+        return false
+    }
+}
+
+function sleep( ms ) {
+    return new Promise( resolve => setTimeout( resolve, ms ) )
+}
+
+/**
+ * Ask the calibration leader to exit. Its shell trap restores charging and the
+ * protection state captured when calibration started, then removes the pid file.
+ * A second GUI restore would race that trap and could turn protection back on.
+ */
 const cancel_calibration = async () => {
     try {
         if( !is_calibration_running() ) return false
 
         log( `[Calibration] Cancelling calibration...` )
+        let pid = null
         try {
             if( fs.existsSync( CALIBRATE_PID_FILE ) ) {
-                const pid = parseInt( fs.readFileSync( CALIBRATE_PID_FILE, 'utf8' ).trim(), 10 )
-                if( !isNaN( pid ) ) {
-                    process.kill( pid, 'SIGTERM' )
-                }
-                fs.unlinkSync( CALIBRATE_PID_FILE )
+                pid = parseInt( fs.readFileSync( CALIBRATE_PID_FILE, 'utf8' ).trim(), 10 )
             }
-        } catch ( e ) {
-            log( `[Calibration] Note on process kill: `, e?.message )
+        } catch ( err ) {
+            log( `[Calibration] Could not read calibration pid: `, err?.message )
+        }
+
+        if( Number.isInteger( pid ) && pid > 0 ) {
+            try {
+                process.kill( pid, 'SIGTERM' )
+            } catch ( err ) {
+                log( `[Calibration] SIGTERM failed: `, err?.message )
+            }
+            const deadline = Date.now() + 2000
+            while( process_is_alive( pid ) && Date.now() < deadline ) {
+                await sleep( 50 )
+            }
+            if( process_is_alive( pid ) ) {
+                try {
+                    process.kill( -pid, 'SIGKILL' )
+                } catch ( err ) {
+                    try {
+                        process.kill( pid, 'SIGKILL' )
+                    } catch ( inner ) {
+                        log( `[Calibration] SIGKILL failed: `, inner?.message )
+                    }
+                }
+            }
+        }
+
+        if( fs.existsSync( CALIBRATE_PID_FILE ) && ( !pid || !process_is_alive( pid ) ) ) {
+            fs.unlinkSync( CALIBRATE_PID_FILE )
         }
 
         record_event( {
             type: 'calibration_cancel',
             title: 'Calibration Cancelled',
-            detail: 'User cancelled calibration. Restoring battery maintenance.'
+            detail: 'User cancelled calibration. The calibration process restores the protection state it captured at start.'
         } )
 
-        const target = get_charge_limit()
-        const mode = get_protection_mode()
-        if( mode === 'enabled' ) {
-            await enable_battery_limiter( target )
-        }
-
-        await alert( 'Calibration cancelled. Normal battery protection has been restored.' )
+        await alert( 'Calibration cancelled. Charging was returned to the state from before calibration.' )
         return true
     } catch ( err ) {
         log( `[Calibration] Error cancelling calibration: `, err )

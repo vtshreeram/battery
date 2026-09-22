@@ -1,7 +1,7 @@
 {
   "name": "battery",
   "productName": "Battery King",
-  "version": "1.4.0",
+  "version": "1.4.2",
   "description": "Battery King - Battery charge limiter and health manager for Apple Silicon MacBooks",
   "main": "main.js",
   "build": {
@@ -30,8 +30,9 @@
   "scripts": {
     "start": "development=true electron .",
     "start:watch": "nodemon --watch . --exec 'skipupdate=true development=true electron .'",
-    "build": "rm -rf ./dist/* && electron-builder build --mac --arm64",
-    "test": "node --test --test-concurrency=1 test/**/*.test.js",
+    "build": "rm -rf ./dist/* && electron-builder build --mac --arm64 --publish never",
+    "build:release": "rm -rf ./dist/* && electron-builder build --mac --arm64",
+    "test": "node --test --test-concurrency=1 test/*.test.js",
     "lint": "eslint main.js modules test",
     "lint:check": "eslint main.js modules test",
     "lint:fix": "eslint --fix main.js modules test"

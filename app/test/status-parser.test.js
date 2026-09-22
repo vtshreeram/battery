@@ -72,6 +72,14 @@ test( 'Status Parser - Non-numeric percentage fails explicitly', () => {
     assert.equal( result.battery_state, 'Battery status unavailable' )
 } )
 
+test( 'Status Parser - Percentage range stays a range', () => {
+    const result = parse_status_csv( '74,2:00,disabled,not discharging,70-80' )
+    assert.equal( result.maintainMode, 'range' )
+    assert.equal( result.lowerLimit, 70 )
+    assert.equal( result.upperLimit, 80 )
+    assert.equal( result.maintain_percentage, 80 )
+} )
+
 test( 'Status Parser - Custom limit is captured correctly', () => {
     const raw = '65,0:45,enabled,,60'
     const result = parse_status_csv( raw )

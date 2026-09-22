@@ -10,11 +10,15 @@ const get_force_discharge_setting = () => {
     return Boolean( get_setting( 'force_discharge', false ) )
 }
 
+const set_force_discharge_setting = ( enabled ) => {
+    const next = Boolean( enabled )
+    log( `[Settings] Setting force discharge to ${ next }` )
+    set_setting( 'force_discharge', next )
+    return next
+}
+
 const toggle_force_discharge = () => {
-    const current = get_force_discharge_setting()
-    log( `[Settings] Setting force discharge to ${ !current }` )
-    set_setting( 'force_discharge', !current )
-    return !current
+    return set_force_discharge_setting( !get_force_discharge_setting() )
 }
 
 const update_force_discharge_setting = async () => {
@@ -187,6 +191,7 @@ const toggle_startup_setting = () => {
 
 module.exports = {
     get_force_discharge_setting,
+    set_force_discharge_setting,
     toggle_force_discharge,
     update_force_discharge_setting,
     get_master_notifications,

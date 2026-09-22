@@ -56,6 +56,10 @@ const parse_status_csv = ( csv_text = '' ) => {
             charging: null,
             discharging: null,
             maintain_percentage: null,
+            maintainMode: null,
+            lowerLimit: null,
+            upperLimit: null,
+            targetLimit: null,
             battery_state: 'Battery status unavailable',
             daemon_state: 'unavailable',
             source: 'cli',
@@ -72,12 +76,8 @@ const parse_status_csv = ( csv_text = '' ) => {
     const remaining = timeMatch ? timeMatch[ 0 ] : 'unknown'
     const charging = raw_charging.trim() === 'enabled'
     const discharging = raw_discharging.trim() === 'discharging'
-
-    let maintain_percentage = null
-    const m_num = parseInt( raw_maintain.trim(), 10 )
-    if( !isNaN( m_num ) && m_num >= 1 && m_num <= 100 ) {
-        maintain_percentage = m_num
-    }
+    const maintain = parse_maintain_field( raw_maintain )
+    const { maintain_percentage } = maintain
 
     const is_valid = percentage !== null
 
@@ -85,7 +85,9 @@ const parse_status_csv = ( csv_text = '' ) => {
     let battery_state = is_valid ? `${ percentage }%${ remaining_suffix }` : 'Battery status unavailable'
     let daemon_state = ''
     if( discharging ) {
-        daemon_state = `forcing discharge to ${ maintain_percentage || 80 }%`
+        daemon_state = maintain_percentage === null
+            ? 'forcing discharge'
+            : `forcing discharge to ${ maintain_percentage }%`
     } else {
         daemon_state = `smc charging ${ charging ? 'enabled' : 'disabled' }`
     }
@@ -97,11 +99,62 @@ const parse_status_csv = ( csv_text = '' ) => {
         charging,
         discharging,
         maintain_percentage,
+        maintainMode: maintain.maintainMode,
+        lowerLimit: maintain.lowerLimit,
+        upperLimit: maintain.upperLimit,
+        targetLimit: maintain.targetLimit,
         battery_state,
         daemon_state,
         source: 'cli',
         timestamp: Date.now()
     }
+}
+
+/**
+ * Keep a percentage range intact. parseInt("70-80") is 70 and would drop the upper bound.
+ * @param {string} raw
+ */
+function parse_maintain_field( raw ) {
+    const text = String( raw || '' ).trim()
+    const empty = {
+        maintainMode: null,
+        maintain_percentage: null,
+        lowerLimit: null,
+        upperLimit: null,
+        targetLimit: null
+    }
+    if( !text ) return empty
+
+    const range = text.match( /^(\d{1,3})-(\d{1,3})$/ )
+    if( range ) {
+        const lowerLimit = Number( range[ 1 ] )
+        const upperLimit = Number( range[ 2 ] )
+        if( lowerLimit >= 0 && upperLimit <= 100 && lowerLimit < upperLimit ) {
+            return {
+                maintainMode: 'range',
+                maintain_percentage: upperLimit,
+                lowerLimit,
+                upperLimit,
+                targetLimit: null
+            }
+        }
+        return empty
+    }
+
+    if( /^\d{1,3}$/.test( text ) ) {
+        const targetLimit = Number( text )
+        if( targetLimit >= 0 && targetLimit <= 100 ) {
+            return {
+                maintainMode: 'percentage',
+                maintain_percentage: targetLimit,
+                lowerLimit: targetLimit,
+                upperLimit: targetLimit,
+                targetLimit
+            }
+        }
+    }
+
+    return { ...empty, maintainMode: 'unknown' }
 }
 
 /**
@@ -141,6 +194,10 @@ const get_battery_status = async ( retries = 2 ) => {
             charging: null,
             discharging: null,
             maintain_percentage: null,
+            maintainMode: null,
+            lowerLimit: null,
+            upperLimit: null,
+            targetLimit: null,
             battery_state: 'Battery status unavailable',
             daemon_state: 'unavailable',
             source: 'cli',
@@ -150,50 +207,86 @@ const get_battery_status = async ( retries = 2 ) => {
 }
 
 /**
- * Enable battery limiter at specified or saved limit
- * Persists user preference as 'enabled'
+ * Desired limit matches the maintain target reported by the CLI.
+ * A range matches on its upper bound, which is the ceiling the firmware holds.
+ */
+function observed_limit_matches( status, limit ) {
+    if( !status || status.available !== true ) return false
+    if( status.maintainMode === 'range' ) {
+        return status.upperLimit === limit
+    }
+    if( status.maintainMode === 'percentage' ) {
+        return status.targetLimit === limit
+    }
+    return status.maintain_percentage === limit
+}
+
+/**
+ * Enable battery limiter at the requested limit.
+ * protection_mode and charge_limit are updated only after the CLI accepts the limit
+ * and status readback shows that same target.
  * @param {number} targetLimit
+ * @returns {Promise<number|null>} current battery percentage, or null when the operation failed
  */
 const enable_battery_limiter = async ( targetLimit ) => {
     try {
-        const limit = targetLimit ? Number( targetLimit ) : get_charge_limit()
-        set_charge_limit( limit )
-        set_protection_mode( 'enabled' )
+        const requested = targetLimit === undefined || targetLimit === null || targetLimit === ''
+            ? get_charge_limit()
+            : Number( targetLimit )
+        if( !Number.isInteger( requested ) || requested < 50 || requested > 100 ) {
+            throw new Error( `Invalid charge limit: ${ targetLimit }. Must be an integer between 50 and 100.` )
+        }
 
         const allow_force_discharge = get_force_discharge_setting()
-        log( `[Battery] Enabling battery limiter at ${ limit }% (force-discharge: ${ allow_force_discharge })` )
+        log( `[Battery] Enabling battery limiter at ${ requested }% (force-discharge: ${ allow_force_discharge })` )
 
         await exec_async(
-            `${ battery } maintain ${ limit }${ allow_force_discharge ? ' --force-discharge' : '' }`,
-            1500
-        ).catch( e => {
-            if( e.code !== 'ETIMEDOUT' ) throw e
-        } )
+            `${ battery } maintain ${ requested }${ allow_force_discharge ? ' --force-discharge' : '' }`,
+            8000
+        )
 
         const status = await get_battery_status()
-        log( `[Battery] enable_battery_limiter completed, current percentage: ${ status?.percentage }` )
-        return status?.percentage
+        if( !observed_limit_matches( status, requested ) ) {
+            throw new Error( `Charge limit ${ requested }% was not confirmed by battery status` )
+        }
+
+        set_charge_limit( requested )
+        set_protection_mode( 'enabled' )
+        log( `[Battery] enable_battery_limiter confirmed at ${ requested }%, battery ${ status.percentage }%` )
+        return status.percentage
     } catch ( e ) {
         log( '[Battery] Error enabling battery limiter: ', e )
-        await alert( `Could not enable battery protection:\n${ e.message }` )
+        try {
+            await alert( `Could not enable battery protection:\n${ e.message }` )
+        } catch ( alert_error ) {
+            log( '[Battery] Could not show the enable-failure dialog: ', alert_error?.message || alert_error )
+        }
         return null
     }
 }
 
 /**
- * Disable battery limiter
- * Persists user preference as 'disabled'
+ * Disable battery limiter.
+ * protection_mode stays unchanged until `maintain stop` finishes and status no longer reports an active maintain process.
  */
 const disable_battery_limiter = async () => {
     try {
         log( `[Battery] Disabling battery limiter` )
+        await exec_async( `${ battery } maintain stop`, 8000 )
+        const still_running = await is_limiter_enabled()
+        if( still_running ) {
+            throw new Error( 'Maintenance process was still running after maintain stop' )
+        }
         set_protection_mode( 'disabled' )
-        await exec_async( `${ battery } maintain stop` )
         const status = await get_battery_status()
-        return status?.percentage
+        return status?.percentage ?? null
     } catch ( e ) {
         log( '[Battery] Error disabling battery limiter: ', e )
-        await alert( `Could not disable battery protection:\n${ e.message }` )
+        try {
+            await alert( `Could not disable battery protection:\n${ e.message }` )
+        } catch ( alert_error ) {
+            log( '[Battery] Could not show the disable-failure dialog: ', alert_error?.message || alert_error )
+        }
         return null
     }
 }
@@ -206,7 +299,7 @@ const log_err_return_false = ( ...errdata ) => {
 /**
  * Check if the CLI maintenance process is actively maintaining
  */
-const is_limiter_enabled = async () => {
+async function is_limiter_enabled() {
     try {
         const result = await exec_async( `${ battery } status` )
         return result.stdout.includes( 'being maintained at' )
@@ -475,6 +568,7 @@ const switch_to_power = async () => {
 module.exports = {
     smc_commands,
     parse_status_csv,
+    parse_maintain_field,
     parse_ioreg_battery,
     parse_system_profiler_battery,
     enable_battery_limiter,

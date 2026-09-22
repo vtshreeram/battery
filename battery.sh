@@ -4,7 +4,7 @@
 ## Update management
 ## variables are used by this binary as well at the update script
 ## ###############
-BATTERY_CLI_VERSION="v1.4.1"
+BATTERY_CLI_VERSION="v1.4.2"
 
 # If a script may run as root:
 #   - Reset PATH to safe defaults at the very beginning of the script.
@@ -27,7 +27,51 @@ maintain_voltage_tracker_file=$configfolder/maintain.voltage
 notify_setting_file=$configfolder/notify.setting
 daemon_path=$HOME/Library/LaunchAgents/battery.plist
 calibrate_pidfile=$configfolder/calibrate.pid
+calibrate_state_file=$configfolder/calibrate.state
+maintain_result_file=$configfolder/maintain.result
 path_configfile=/etc/paths.d/50-battery
+
+# Test harness only. Production runs leave BATTERY_TEST_MODE unset.
+# The override is refused for root and for the installed SMC path so a test cannot write real hardware.
+if [[ "${BATTERY_TEST_MODE:-}" == "1" ]]; then
+	if [[ "$EUID" -eq 0 ]]; then
+		echo "BATTERY_TEST_MODE cannot run as root" >&2
+		exit 1
+	fi
+	if [[ -z "${BATTERY_TEST_SMC:-}" || -z "${BATTERY_TEST_ROOT:-}" || -z "${BATTERY_TEST_BATTERY:-}" ]]; then
+		echo "BATTERY_TEST_MODE requires BATTERY_TEST_SMC, BATTERY_TEST_ROOT, and BATTERY_TEST_BATTERY" >&2
+		exit 1
+	fi
+	root_real="$(cd "$BATTERY_TEST_ROOT" && pwd)"
+	smc_dir="$(cd "$(dirname "$BATTERY_TEST_SMC")" && pwd)"
+	smc_real="$smc_dir/$(basename "$BATTERY_TEST_SMC")"
+	case "$smc_real" in
+		"$root_real"/*) ;;
+		*)
+			echo "BATTERY_TEST_SMC must live inside BATTERY_TEST_ROOT" >&2
+			exit 1
+			;;
+	esac
+	case "$root_real" in
+		/|/usr|/usr/local|/usr/local/co.palokaj.battery|"$HOME"|"$HOME/.battery")
+			echo "BATTERY_TEST_ROOT is not a safe test directory" >&2
+			exit 1
+			;;
+	esac
+	export BATTERY_TEST_MODE BATTERY_TEST_SMC BATTERY_TEST_ROOT BATTERY_TEST_BATTERY
+	configfolder="$root_real/config"
+	pidfile="$configfolder/battery.pid"
+	logfile="$configfolder/battery.log"
+	maintain_percentage_tracker_file="$configfolder/maintain.percentage"
+	maintain_voltage_tracker_file="$configfolder/maintain.voltage"
+	notify_setting_file="$configfolder/notify.setting"
+	daemon_path="$root_real/LaunchAgents/battery.plist"
+	calibrate_pidfile="$configfolder/calibrate.pid"
+	calibrate_state_file="$configfolder/calibrate.state"
+	maintain_result_file="$configfolder/maintain.result"
+	battery_binary="$BATTERY_TEST_BATTERY"
+	smc_binary="$smc_real"
+fi
 
 # Voltage limits
 voltage_min="10.5"
@@ -43,9 +87,11 @@ voltage_hyst_max="2"
 #   the user or others.
 # - Ensure that you are not sourcing any user-writable scripts within this script to avoid overrides of
 #   security critical variables.
-binfolder="/usr/local/co.palokaj.battery"
-battery_binary="$binfolder/battery"
-smc_binary="$binfolder/smc"
+if [[ "${BATTERY_TEST_MODE:-}" != "1" ]]; then
+	binfolder="/usr/local/co.palokaj.battery"
+	battery_binary="$binfolder/battery"
+	smc_binary="$binfolder/smc"
+fi
 
 # GitHub URLs for setup and updates.
 # Temporarily set to your username and branch to test update functionality with your fork.
@@ -68,7 +114,9 @@ mkdir -p "$configfolder"
 touch "$logfile"
 
 # Trim logfile if needed
-logsize=$(stat -f%z "$logfile")
+if ! logsize=$(stat -f%z "$logfile" 2>/dev/null); then
+	logsize=$(stat -c%s "$logfile" 2>/dev/null || echo 0)
+fi
 max_logsize_bytes=5000000
 if ((logsize > max_logsize_bytes)); then
 	tail -n 100 "$logfile" > "$logfile.tmp" && mv "$logfile.tmp" "$logfile"
@@ -115,7 +163,8 @@ Usage:
 
   battery calibrate
     calibrate the battery by discharging it to 15%, then recharging it to 100%, and keeping it there for 1 hour
-    battery maintenance is restored upon completion
+    if maintenance was running when calibration started, that same setting is restored
+    if maintenance was stopped, it stays stopped
     menubar battery app execution and/or battery maintain command will interrupt calibration
 
   battery charge LEVEL[1-100]
@@ -194,7 +243,7 @@ function log() {
 function notifications_enabled() {
 	if test -f "$notify_setting_file"; then
 		local setting
-		setting=$(cat "$notify_setting_file" 2>/dev/null | tr -d '[:space:]')
+		setting="$(tr -d '[:space:]' < "$notify_setting_file" 2>/dev/null || true)"
 		if [[ "$setting" == "off" ]]; then
 			return 1
 		fi
@@ -273,20 +322,79 @@ function valid_voltage() {
 	return 1
 }
 
-function smc_read_hex() {
-	key=$1
-	line=$("$smc_binary" -k "$key" -r 2>/dev/null)
-	if [[ $line =~ "no data" ]]; then
-		echo
+function smc_privileged() {
+	if [[ "${BATTERY_TEST_MODE:-}" == "1" ]]; then
+		case "$smc_binary" in
+			/usr/*|/bin/*|/sbin/*)
+				echo "BATTERY_TEST_MODE refused SMC path $smc_binary" >&2
+				return 1
+				;;
+		esac
+		"$smc_binary" "$@"
 	else
-		echo "${line#*bytes}" | tr -d ' ' | tr -d ')'
+		sudo "$smc_binary" "$@"
 	fi
+}
+
+function smc_read_raw() {
+	local key="$1"
+	"$smc_binary" -k "$key" -r 2>&1 || true
+}
+
+# Valid SMC data is a real read. Empty output, "no data", "Error", and other malformed text are unsupported.
+function smc_output_is_valid_data() {
+	local line="$1"
+	if [[ -z "${line//[[:space:]]/}" ]]; then
+		return 1
+	fi
+	local lower
+	lower="$(printf '%s' "$line" | tr '[:upper:]' '[:lower:]')"
+	if [[ "$lower" == *"no data"* || "$lower" == *"error"* ]]; then
+		return 1
+	fi
+	if [[ "$line" == *[Bb]ytes* ]]; then
+		return 0
+	fi
+	if [[ "$line" =~ [0-9A-Fa-f][0-9A-Fa-f] ]]; then
+		return 0
+	fi
+	return 1
+}
+
+function smc_key_supported() {
+	local line
+	line="$(smc_read_raw "$1")"
+	smc_output_is_valid_data "$line"
+}
+
+function smc_read_hex() {
+	local key="$1"
+	local line
+	line="$(smc_read_raw "$key")"
+	if ! smc_output_is_valid_data "$line"; then
+		echo
+		return 1
+	fi
+	if [[ "$line" == *[Bb]ytes* ]]; then
+		echo "${line#*bytes}" | tr -d ' )'
+	else
+		echo "$line" | grep -Eo '[0-9A-Fa-f]+' | tail -n 1
+	fi
+}
+
+function smc_hex_to_uint() {
+	local hex="$1"
+	hex="${hex//[^0-9A-Fa-f]/}"
+	if [[ -z "$hex" ]]; then
+		return 1
+	fi
+	echo $((16#$hex))
 }
 
 function smc_write_hex() {
 	local key=$1
 	local hex_value=$2
-	if ! sudo $smc_binary -k "$key" -w "$hex_value" >/dev/null 2>&1; then
+	if ! smc_privileged -k "$key" -w "$hex_value" >/dev/null 2>&1; then
 		log "⚠️ Failed to write $hex_value to $key"
 		return 1
 	fi
@@ -296,15 +404,15 @@ function smc_write_hex() {
 ## #########################
 ## Detect supported SMC keys
 ## #########################
-[[ $($smc_binary -k CHTE -r) =~ "no data" ]] && smc_supports_tahoe=false || smc_supports_tahoe=true;
-[[ $($smc_binary -k CH0B -r) =~ "no data" ]] && smc_supports_legacy=false || smc_supports_legacy=true;
-[[ $($smc_binary -k CHIE -r) =~ "no data" ]] && smc_supports_adapter_chie=false || smc_supports_adapter_chie=true;
-[[ $($smc_binary -k CH0I -r) =~ "no data" ]] && smc_supports_adapter_ch0i=false || smc_supports_adapter_ch0i=true;
-[[ $($smc_binary -k CH0J -r) =~ "no data" || $($smc_binary -k CH0J -r) =~ "Error" ]] && smc_supports_adapter_ch0j=false || smc_supports_adapter_ch0j=true;
-if [[ $($smc_binary -k bfF0 -r) =~ "no data" || $($smc_binary -k bfD0 -r) =~ "no data" || $($smc_binary -k bfE0 -r) =~ "no data" ]]; then
-	smc_supports_firmware_limit=false
-else
+smc_key_supported CHTE && smc_supports_tahoe=true || smc_supports_tahoe=false
+smc_key_supported CH0B && smc_supports_legacy=true || smc_supports_legacy=false
+smc_key_supported CHIE && smc_supports_adapter_chie=true || smc_supports_adapter_chie=false
+smc_key_supported CH0I && smc_supports_adapter_ch0i=true || smc_supports_adapter_ch0i=false
+smc_key_supported CH0J && smc_supports_adapter_ch0j=true || smc_supports_adapter_ch0j=false
+if smc_key_supported bfF0 && smc_key_supported bfD0 && smc_key_supported bfE0; then
 	smc_supports_firmware_limit=true
+else
+	smc_supports_firmware_limit=false
 fi
 
 function log_smc_capabilities() {
@@ -316,28 +424,95 @@ function percentage_to_smc_hex() {
 	printf '000000%02x' "$1"
 }
 
+function firmware_limit_only() {
+	[[ "$smc_supports_firmware_limit" == "true" && "$smc_supports_tahoe" != "true" && "$smc_supports_legacy" != "true" ]]
+}
+
+# A single percentage becomes a 2-point band so the pack is not bounced every minute.
+function normalize_firmware_band() {
+	local upper="$1"
+	local lower="$2"
+	if [[ "$lower" -ge "$upper" ]]; then
+		lower=$((upper - 2))
+		[[ "$lower" -lt 1 ]] && lower=1
+	fi
+	echo "$lower $upper"
+}
+
+# Armed is not enough: bfD0 and bfE0 must match the requested band.
+function firmware_limit_matches() {
+	local upper="$1"
+	local lower="$2"
+	local band normalized_lower arm_hex upper_hex lower_hex arm_n upper_n lower_n
+	band="$(normalize_firmware_band "$upper" "$lower")"
+	normalized_lower="${band%% *}"
+	upper="${band##* }"
+	arm_hex="$(smc_read_hex bfF0)" || return 1
+	upper_hex="$(smc_read_hex bfD0)" || return 1
+	lower_hex="$(smc_read_hex bfE0)" || return 1
+	arm_n="$(smc_hex_to_uint "$arm_hex")" || return 1
+	upper_n="$(smc_hex_to_uint "$upper_hex")" || return 1
+	lower_n="$(smc_hex_to_uint "$lower_hex")" || return 1
+	[[ "$arm_n" -eq 2 && "$upper_n" -eq "$upper" && "$lower_n" -eq "$normalized_lower" ]]
+}
+
 # Firmware ceiling: stop charging at the upper percentage and keep the adapter powering the Mac.
 # bfF0 00 clears the limit, 02 arms it. bfD0 is the upper percentage, bfE0 the lower.
 function apply_firmware_charge_limit() {
 	local upper="$1"
 	local lower="$2"
-	# The ceiling keys want a band. A single percentage keeps a 2-point gap so the pack is not bounced every minute.
-	if [[ "$lower" -ge "$upper" ]]; then
-		lower=$((upper - 2))
-		[[ "$lower" -lt 1 ]] && lower=1
+	local band prev_arm prev_upper prev_lower failed
+	band="$(normalize_firmware_band "$upper" "$lower")"
+	lower="${band%% *}"
+	upper="${band##* }"
+	if firmware_limit_matches "$upper" "$lower"; then
+		log "Firmware ceiling already ${lower}-${upper}%"
+		return 0
 	fi
+	prev_arm="$(smc_read_hex bfF0 || true)"
+	prev_upper="$(smc_read_hex bfD0 || true)"
+	prev_lower="$(smc_read_hex bfE0 || true)"
 	log "Setting firmware charge limit ${lower}-${upper}%"
-	smc_write_hex bfF0 00 || return 1
-	smc_write_hex bfD0 "$(percentage_to_smc_hex "$upper")" || return 1
-	smc_write_hex bfE0 "$(percentage_to_smc_hex "$lower")" || return 1
-	smc_write_hex bfF0 02 || return 1
+	failed=0
+	smc_write_hex bfF0 00 || failed=1
+	if [[ "$failed" -eq 0 ]]; then
+		smc_write_hex bfD0 "$(percentage_to_smc_hex "$upper")" || failed=1
+	fi
+	if [[ "$failed" -eq 0 ]]; then
+		smc_write_hex bfE0 "$(percentage_to_smc_hex "$lower")" || failed=1
+	fi
+	if [[ "$failed" -eq 0 ]]; then
+		smc_write_hex bfF0 02 || failed=1
+	fi
+	if [[ "$failed" -eq 0 ]] && firmware_limit_matches "$upper" "$lower"; then
+		return 0
+	fi
+	log "⚠️ Firmware charge limit verification failed for ${lower}-${upper}% (arm=$(smc_read_hex bfF0 || true) upper=$(smc_read_hex bfD0 || true) lower=$(smc_read_hex bfE0 || true))"
+	if [[ -n "$prev_upper" ]]; then
+		smc_write_hex bfD0 "$prev_upper" || log "⚠️ Failed to restore bfD0"
+	fi
+	if [[ -n "$prev_lower" ]]; then
+		smc_write_hex bfE0 "$prev_lower" || log "⚠️ Failed to restore bfE0"
+	fi
+	if [[ -n "$prev_arm" ]]; then
+		smc_write_hex bfF0 "$prev_arm" || log "⚠️ Failed to restore bfF0"
+	fi
+	return 1
 }
 
 function clear_firmware_charge_limit() {
+	local arm upper lower
 	log "Clearing firmware charge limit"
 	smc_write_hex bfF0 00 || return 1
 	smc_write_hex bfD0 00000000 || return 1
 	smc_write_hex bfE0 00000000 || return 1
+	arm="$(smc_hex_to_uint "$(smc_read_hex bfF0)")" || return 1
+	upper="$(smc_hex_to_uint "$(smc_read_hex bfD0)")" || return 1
+	lower="$(smc_hex_to_uint "$(smc_read_hex bfE0)")" || return 1
+	if [[ "$arm" -ne 0 || "$upper" -ne 0 || "$lower" -ne 0 ]]; then
+		log "⚠️ Firmware charge limit readback after clear was arm=$arm upper=$upper lower=$lower"
+		return 1
+	fi
 }
 
 # Resolve the maintain band used when disable_charging runs outside the maintain loop.
@@ -377,14 +552,14 @@ function change_magsafe_led_color() {
 
 	if [[ "$color" == "green" ]]; then
 		log "setting LED to green"
-		sudo $smc_binary -k ACLC -w 03
+		smc_write_hex ACLC 03
 	elif [[ "$color" == "orange" ]]; then
 		log "setting LED to orange"
-		sudo $smc_binary -k ACLC -w 04
+		smc_write_hex ACLC 04
 	else
 		# Default action: reset. Value 00 is a guess and needs confirmation
 		log "resetting LED"
-		sudo $smc_binary -k ACLC -w 00
+		smc_write_hex ACLC 00
 	fi
 }
 
@@ -401,7 +576,7 @@ function enable_discharging() {
 	else
 		smc_write_hex CH0I 01
 	fi
-	sudo $smc_binary -k ACLC -w 01
+	smc_write_hex ACLC 01
 }
 
 function disable_discharging() {
@@ -430,7 +605,7 @@ function disable_discharging() {
 			smc_write_hex CH0B 00
 			smc_write_hex CH0C 00
 		elif [[ "$smc_supports_firmware_limit" == "true" ]]; then
-			log "Disabling discharging: firmware charge limit left armed"
+			log "Disabling discharging: firmware charge limit left unchanged"
 		else
 			log "⚠️ Unable to reset charging state"
 		fi
@@ -452,7 +627,7 @@ function disable_discharging() {
 			smc_write_hex CH0B 00
 			smc_write_hex CH0C 00
 		elif [[ "$smc_supports_firmware_limit" == "true" ]]; then
-			log "Disabling discharging: firmware charge limit left armed"
+			log "Disabling discharging: firmware charge limit left unchanged"
 		else
 			log "⚠️ Unable to reset charging state"
 		fi
@@ -469,14 +644,15 @@ function disable_discharging() {
 function enable_charging() {
 	log "🔌🔋 Enabling battery charging"
 	if [[ "$smc_supports_tahoe" == "true" ]]; then
-		smc_write_hex CHTE 00000000
+		smc_write_hex CHTE 00000000 || return 1
 	elif [[ "$smc_supports_legacy" == "true" ]]; then
-		smc_write_hex CH0B 00
-		smc_write_hex CH0C 00
+		smc_write_hex CH0B 00 || return 1
+		smc_write_hex CH0C 00 || return 1
 	elif [[ "$smc_supports_firmware_limit" == "true" ]]; then
-		clear_firmware_charge_limit
+		clear_firmware_charge_limit || return 1
 	else
 		log "⚠️ Unable to determine SMC keys for enabling charging"
+		return 1
 	fi
 	disable_discharging
 }
@@ -484,18 +660,19 @@ function enable_charging() {
 function disable_charging() {
 	log "🔌🪫 Disabling battery charging"
 	if [[ "$smc_supports_tahoe" == "true" ]]; then
-		smc_write_hex CHTE 01000000
+		smc_write_hex CHTE 01000000 || return 1
 	elif [[ "$smc_supports_legacy" == "true" ]]; then
-		smc_write_hex CH0B 02
-		smc_write_hex CH0C 02
+		smc_write_hex CH0B 02 || return 1
+		smc_write_hex CH0C 02 || return 1
 	elif [[ "$smc_supports_firmware_limit" == "true" ]]; then
 		local bounds limit_lower limit_upper
 		bounds="$(firmware_limit_bounds)"
 		limit_lower="${bounds%% *}"
 		limit_upper="${bounds##* }"
-		apply_firmware_charge_limit "$limit_upper" "$limit_lower"
+		apply_firmware_charge_limit "$limit_upper" "$limit_lower" || return 1
 	else
 		log "⚠️ Unable to determine SMC keys for disabling charging"
+		return 1
 	fi
 }
 
@@ -526,7 +703,8 @@ function get_smc_charging_status() {
 			echo "disabled"
 		fi
 	elif [[ "$smc_supports_firmware_limit" == "true" ]]; then
-		# bfF0 00 means the ceiling is off and the battery may charge. Any other value means the ceiling is armed.
+		# bfF0 00 means the ceiling is off. Any other value means some ceiling is armed.
+		# An armed bit does not mean the programmed band matches the requested target.
 		if [[ "$hex_status" == "00" || "$hex_status" == "0" ]]; then
 			echo "enabled"
 		else
@@ -692,7 +870,7 @@ function is_latest_version_installed() {
 
 	# Download the remote script then parse and compare the version string
 	local remote_script
-	remote_script="$(curl -sS "$github_url_battery_sh" 2>/dev/null)"
+	remote_script="$(curl -fsSL "$github_url_battery_sh" 2>/dev/null)" || return 0
 	local remote_version
 	remote_version="$(echo "$remote_script" | grep -E '^BATTERY_CLI_VERSION=' | head -n 1 | cut -d'"' -f2)"
 	if [[ -z "$remote_version" ]]; then
@@ -734,6 +912,28 @@ fi
 if [ -z "$action" ] || [[ "$action" == "help" ]] || [[ "$action" == "--help" ]]; then
 	echo -e "$helpmessage"
 	exit 0
+fi
+
+if [[ "${BATTERY_TEST_MODE:-}" == "1" ]]; then
+	case "$action" in
+		_test_apply_firmware)
+			apply_firmware_charge_limit "$setting" "${subsetting:-$setting}"
+			exit $?
+			;;
+		_test_capabilities)
+			printf 'firmware=%s legacy=%s tahoe=%s ch0j=%s\n' \
+				"$smc_supports_firmware_limit" "$smc_supports_legacy" "$smc_supports_tahoe" "$smc_supports_adapter_ch0j"
+			exit 0
+			;;
+		_test_key_supported)
+			if smc_key_supported "$setting"; then
+				echo yes
+				exit 0
+			fi
+			echo no
+			exit 1
+			;;
+	esac
 fi
 
 # Update '/etc/sudoers.d/battery' config if needed
@@ -798,7 +998,7 @@ if [[ "$action" == "reinstall" ]]; then
 		echo "Press any key to continue"
 		read -r
 	fi
-	curl -sS "$github_url_setup_sh" | bash
+	curl -fsSL "$github_url_setup_sh" | bash
 	exit 0
 fi
 
@@ -814,7 +1014,19 @@ if [[ "$action" == "update_silent" ]]; then
 
 	# Try updating
 	if ! is_latest_version_installed; then
-		curl -sS "$github_url_update_sh" | bash
+		updater="$(mktemp)"
+		if ! curl -fsSL -o "$updater" "$github_url_update_sh"; then
+			rm -f "$updater"
+			echo "❌ Failed to download the updater."
+			exit 1
+		fi
+		if [[ ! -s "$updater" ]]; then
+			rm -f "$updater"
+			echo "❌ Updater download was empty."
+			exit 1
+		fi
+		bash "$updater"
+		rm -f "$updater"
 		echo "✅ battery background script was updated to the latest version."
 	else
 		echo "☑️  No updates found"
@@ -869,14 +1081,14 @@ if [[ "$action" == "update" ]]; then
 	if ! check_installation_integrity; then
 		version_before="0" # Force restart maintenance process
 		echo -e "‼️ The battery installation seems to be broken. Forcing reinstall...\n"
-		$battery_binary reinstall silent
+		"$battery_binary" reinstall silent
 	else
 		version_before="$($battery_binary version)"
-		sudo $battery_binary update_silent
+		sudo "$battery_binary" update_silent
 	fi
 
 	# Restart background maintenance process if update was installed
-	if [[ -x $battery_binary ]] && [[ "$($battery_binary version)" != "$version_before" ]]; then
+	if [[ -x "$battery_binary" ]] && [[ "$($battery_binary version)" != "$version_before" ]]; then
 		printf "\n%s\n" "🛠️  Restarting 'battery maintain' ..."
 		$battery_binary maintain recover
 	fi
@@ -1081,6 +1293,7 @@ if [[ "$action" == "maintain_synchronous" ]]; then
 			setting="$maintain_percentage"
 		else
 			log "No setting to recover, exiting"
+			printf '%s\n' "fail" > "$maintain_result_file"
 			exit 0
 		fi
 	fi
@@ -1102,10 +1315,21 @@ if [[ "$action" == "maintain_synchronous" ]]; then
 		upper_bound="$setting"
 	else
 		log "Error: $setting is not a valid setting for battery maintain. Please use a number between 0 and 100, or a range like 70-80"
+		printf '%s\n' "fail" > "$maintain_result_file"
 		exit 1
 	fi
 
 	echo $$ > "$pidfile"
+
+	# Confirm the ceiling before the long loop. `battery maintain` waits for this result.
+	if firmware_limit_only; then
+		if ! disable_charging; then
+			printf '%s\n' "fail" > "$maintain_result_file"
+			log "⚠️ Failed to program firmware ceiling before maintenance loop"
+			exit 1
+		fi
+	fi
+	printf '%s\n' "ok" > "$maintain_result_file"
 
 	# Check if the user requested that the battery maintenance first discharge to the desired level
 	if [[ "$subsetting" == "--force-discharge" ]]; then
@@ -1138,13 +1362,15 @@ if [[ "$action" == "maintain_synchronous" ]]; then
 		is_charging=$(get_smc_charging_status)
 		ac_attached=$(get_charger_state)
 
-		# Firmware mode keeps the ceiling armed. Clearing it below the target would start a charge
-		# and the next pass would arm it again. The SMC owns the band between the two percentages.
-		if [[ "$smc_supports_firmware_limit" == "true" && "$smc_supports_tahoe" != "true" && "$smc_supports_legacy" != "true" ]]; then
+		# Firmware mode keeps the ceiling armed at the requested band. An already-armed
+		# bfF0 is not enough: changing 80 to 70 must rewrite bfD0/bfE0.
+		if firmware_limit_only; then
 
-			if [[ "$is_charging" != "disabled" ]]; then
-				log "Charge limit not armed, applying firmware ceiling"
-				disable_charging
+			if ! firmware_limit_matches "$upper_bound" "$lower_bound"; then
+				log "Firmware ceiling missing or mismatched for ${lower_bound}-${upper_bound}%"
+				if ! disable_charging; then
+					log "⚠️ Failed to program firmware ceiling ${lower_bound}-${upper_bound}%"
+				fi
 			fi
 			if [[ "$battery_percentage" -ge "$upper_bound" && "$notified_target_reached" != true ]]; then
 				send_notification "Battery King" "Target Limit Reached ($upper_bound%)" "Charging stopped. The Mac is running from the adapter." "Glass"
@@ -1220,9 +1446,17 @@ if [[ "$action" == "maintain_voltage_synchronous" ]]; then
 			subsetting=$(echo "$maintain_voltage" | awk '{print $2}')
 		else
 			log "No setting to recover, exiting"
+			printf '%s\n' "fail" > "$maintain_result_file"
 			exit 0
 		fi
 	fi
+
+	if firmware_limit_only; then
+		log "Error: voltage maintenance is not supported on this Mac. Firmware percentage ceilings cannot hold a voltage setpoint. Use a percentage, for example: battery maintain 80"
+		printf '%s\n' "fail" > "$maintain_result_file"
+		exit 1
+	fi
+	printf '%s\n' "ok" > "$maintain_result_file"
 
 	voltage=$(get_voltage)
 	lower_voltage=$(echo "$setting - $subsetting" | bc -l)
@@ -1254,43 +1488,64 @@ if [[ "$action" == "maintain_voltage_synchronous" ]]; then
 
 fi
 
+function stop_maintain_processes() {
+	if test -f "$pidfile"; then
+		local old_pid
+		old_pid="$(tr -d '[:space:]' < "$pidfile" 2>/dev/null || true)"
+		log "Killing old maintain process at ${old_pid:-unknown}"
+		if [[ -n "$old_pid" ]]; then
+			kill "$old_pid" &>/dev/null || true
+		fi
+		rm -f "$pidfile" 2>/dev/null
+	fi
+	# Tests must not signal the user's real maintenance processes.
+	if [[ "${BATTERY_TEST_MODE:-}" == "1" ]]; then
+		return 0
+	fi
+	local p
+	while read -r p; do
+		[[ -z "$p" || "$p" == "$$" ]] && continue
+		kill "$p" &>/dev/null || true
+	done < <(pgrep -f "battery maintain_.*synchronous" 2>/dev/null || true)
+}
+
+function wait_for_maintain_result() {
+	local status
+	for _attempt in $(seq 1 50); do
+		if [[ -f "$maintain_result_file" ]]; then
+			status="$(tr -d '[:space:]' < "$maintain_result_file")"
+			[[ "$status" == "ok" ]]
+			return
+		fi
+		sleep 0.1
+	done
+	return 1
+}
+
+function launchctl_invoke() {
+	if [[ "${BATTERY_TEST_MODE:-}" == "1" ]]; then
+		mkdir -p "$configfolder"
+		printf '%s\n' "$*" >> "$configfolder/launchctl.log"
+		return 0
+	fi
+	launchctl "$@"
+}
+
 # Asynchronous battery level maintenance
 if [[ "$action" == "maintain" ]]; then
 
 	assert_not_running_as_root
 
-	disable_discharging
-
-	# Kill old maintain processes
-	if test -f "$pidfile"; then
-		log "Killing old maintain process at $(cat "$pidfile" 2>/dev/null)"
-		pid=$(cat "$pidfile" 2>/dev/null)
-		kill "$pid" &>/dev/null
-		rm -f "$pidfile" 2>/dev/null
-	fi
-	pgrep -f "battery maintain_.*synchronous" 2>/dev/null | grep -v "^$$$" | while read -r p; do
-		kill "$p" &>/dev/null
-	done
-
-	if test -f "$calibrate_pidfile"; then
-		pid=$(cat "$calibrate_pidfile" 2>/dev/null)
-		kill "$pid" &>/dev/null
-		log "🚨 Calibration process have been stopped"
-	fi
-
 	if [[ "$setting" == "stop" ]]; then
 		log "Killing running maintain daemons & enabling charging as default state"
-		if test -f "$pidfile"; then
-			pid=$(cat "$pidfile" 2>/dev/null)
-			kill "$pid" &>/dev/null
-			rm -f "$pidfile" 2>/dev/null
+		stop_maintain_processes
+		"$battery_binary" disable_daemon
+		if ! enable_charging; then
+			log "⚠️ Failed to clear the charge limit"
+			"$battery_binary" status
+			exit 1
 		fi
-		pgrep -f "battery maintain_.*synchronous" 2>/dev/null | grep -v "^$$$" | while read -r p; do
-			kill "$p" &>/dev/null
-		done
-		$battery_binary disable_daemon
-		enable_charging
-		$battery_binary status
+		"$battery_binary" status
 		exit 0
 	fi
 
@@ -1315,6 +1570,10 @@ if [[ "$action" == "maintain" ]]; then
 		fi
 
 		is_voltage=true
+		if firmware_limit_only; then
+			log "Error: voltage maintenance is not supported on this Mac. Firmware percentage ceilings cannot hold a voltage setpoint. Use a percentage, for example: battery maintain 80"
+			exit 1
+		fi
 
 	# Check if setting is a percentage range or single value
 	elif ! valid_percentage "$setting" && ! valid_percentage_range "$setting"; then
@@ -1327,22 +1586,39 @@ if [[ "$action" == "maintain" ]]; then
 
 	fi
 
+	disable_discharging
+
+	stop_maintain_processes
+	if test -f "$calibrate_pidfile"; then
+		pid="$(tr -d '[:space:]' < "$calibrate_pidfile" 2>/dev/null || true)"
+		if [[ -n "$pid" ]]; then
+			kill "$pid" &>/dev/null || true
+		fi
+		log "🚨 Calibration process have been stopped"
+	fi
+
+	rm -f "$maintain_result_file"
 	# Start maintenance script
 	if [ "$is_voltage" = true ]; then
 		log "Starting battery maintenance at ${setting}V ±${subsetting}V"
-		nohup $battery_binary maintain_voltage_synchronous "$setting" "$subsetting" >> "$logfile" &
+		nohup "$battery_binary" maintain_voltage_synchronous "$setting" "$subsetting" >> "$logfile" &
 	else
 		if valid_percentage_range "$setting"; then
 			log "Starting battery maintenance between ${setting/-/% and }%"
 		else
 			log "Starting battery maintenance at $setting% $subsetting"
 		fi
-		nohup $battery_binary maintain_synchronous "$setting" "$subsetting" >> "$logfile" &
+		nohup "$battery_binary" maintain_synchronous "$setting" "$subsetting" >> "$logfile" &
 	fi
 
 	# Store pid of maintenance process and setting
 	echo $! > "$pidfile"
-	pid=$(cat "$pidfile" 2>/dev/null)
+	if ! wait_for_maintain_result; then
+		log "⚠️ Maintenance did not confirm the requested charge limit"
+		stop_maintain_processes
+		exit 1
+	fi
+	pid="$(tr -d '[:space:]' < "$pidfile" 2>/dev/null || true)"
 
 	if ! [[ "$setting" == "recover" ]]; then
 
@@ -1372,41 +1648,147 @@ if [[ "$action" == "maintain" ]]; then
 
 fi
 
+calibration_cleaned=0
+
+function kill_descendants() {
+	local parent="$1"
+	local child children
+	children="$(pgrep -P "$parent" 2>/dev/null || true)"
+	for child in $children; do
+		kill_descendants "$child"
+		kill -TERM "$child" 2>/dev/null || true
+	done
+}
+
+function kill_calibration_tree() {
+	local pgid member
+	kill_descendants "$$"
+	pgid="$(ps -o pgid= -p $$ 2>/dev/null | tr -d '[:space:]' || true)"
+	if [[ -n "$pgid" ]]; then
+		while read -r member; do
+			member="${member//[[:space:]]/}"
+			[[ -z "$member" || "$member" == "$$" ]] && continue
+			kill -TERM "$member" 2>/dev/null || true
+		done < <(ps -o pid= -g "$pgid" 2>/dev/null || true)
+	fi
+	sleep 0.2
+	kill_descendants "$$"
+	if [[ -n "${pgid:-}" ]]; then
+		while read -r member; do
+			member="${member//[[:space:]]/}"
+			[[ -z "$member" || "$member" == "$$" ]] && continue
+			kill -KILL "$member" 2>/dev/null || true
+		done < <(ps -o pid= -g "$pgid" 2>/dev/null || true)
+	fi
+}
+
+function write_calibration_snapshot() {
+	local was_active=0 mode="none" saved="" extra="" old_pid
+	if test -f "$pidfile"; then
+		old_pid="$(tr -d '[:space:]' < "$pidfile" 2>/dev/null || true)"
+		if [[ -n "$old_pid" ]] && kill -0 "$old_pid" 2>/dev/null; then
+			was_active=1
+		fi
+	fi
+	if test -f "$maintain_voltage_tracker_file"; then
+		mode="voltage"
+		saved="$(awk '{print $1}' "$maintain_voltage_tracker_file")"
+		extra="$(awk '{print $2}' "$maintain_voltage_tracker_file")"
+	elif test -f "$maintain_percentage_tracker_file"; then
+		saved="$(tr -d '[:space:]' < "$maintain_percentage_tracker_file")"
+		if valid_percentage_range "$saved"; then
+			mode="range"
+		elif valid_percentage "$saved"; then
+			mode="percentage"
+		fi
+	fi
+	mkdir -p "$configfolder"
+	cat > "$calibrate_state_file" <<EOF
+was_active=$was_active
+mode=$mode
+setting=$saved
+subsetting=$extra
+EOF
+}
+
+function restore_calibration_protection() {
+	local was_active="0" mode="none" saved="" extra=""
+	if [[ -f "$calibrate_state_file" ]]; then
+		was_active="$(awk -F= '/^was_active=/ {print $2; exit}' "$calibrate_state_file")"
+		mode="$(awk -F= '/^mode=/ {print $2; exit}' "$calibrate_state_file")"
+		saved="$(awk -F= '/^setting=/ {print $2; exit}' "$calibrate_state_file")"
+		extra="$(awk -F= '/^subsetting=/ {print $2; exit}' "$calibrate_state_file")"
+	fi
+	if [[ "$was_active" != "1" ]]; then
+		log "Calibration ended. Protection was off and stays off."
+		return 0
+	fi
+	log "Restoring protection captured at calibration start ($mode $saved $extra)"
+	if [[ "$mode" == "voltage" && -n "$saved" ]]; then
+		"$battery_binary" maintain "${saved}V" "${extra:-0.1}V" || log "⚠️ Failed to restore voltage maintenance"
+	elif [[ -n "$saved" ]]; then
+		"$battery_binary" maintain "$saved" || log "⚠️ Failed to restore percentage maintenance"
+	fi
+}
+
+function cleanup_calibration() {
+	if [[ "$calibration_cleaned" == "1" ]]; then
+		return 0
+	fi
+	calibration_cleaned=1
+	trap - INT TERM EXIT
+	log "Cleaning up calibration"
+	kill_calibration_tree
+	disable_discharging || log "⚠️ Failed to clear adapter isolation after calibration"
+	if ! enable_charging; then
+		log "⚠️ Failed to normalize charging after calibration"
+	fi
+	restore_calibration_protection
+	rm -f "$calibrate_pidfile" "$calibrate_state_file"
+}
+
 # Battery calibration
 if [[ "$action" == "calibrate" ]]; then
 
-	# Stop the maintaining
-	$battery_binary maintain stop &>/dev/null
-
-	# Kill old process silently
-	if test -f "$calibrate_pidfile"; then
-		pid=$(cat "$calibrate_pidfile" 2>/dev/null)
-		kill "$pid" &>/dev/null
+	# Own the process group so cancellation can stop discharge/charge children with the parent.
+	if [[ "${BATTERY_CALIBRATE_GROUP:-}" != "1" ]]; then
+		export BATTERY_CALIBRATE_GROUP=1
+		exec perl -e 'setpgrp(0, 0) or die "setpgrp: $!\n"; exec @ARGV or die "exec: $!\n"' -- "$0" "$@"
 	fi
+
+	write_calibration_snapshot
+	if ! "$battery_binary" maintain stop; then
+		log "⚠️ Could not stop maintenance before calibration"
+	fi
+	trap 'cleanup_calibration; exit 129' HUP
+	trap 'cleanup_calibration; exit 130' INT
+	trap 'cleanup_calibration; exit 143' TERM
+	trap 'cleanup_calibration' EXIT
 	echo $$ > "$calibrate_pidfile"
 
 	echo -e "Starting battery calibration\n"
 
+	if [[ "${BATTERY_TEST_CALIBRATION:-}" == "hold" ]]; then
+		enable_discharging || true
+		while true; do
+			sleep 30
+		done
+	fi
+
 	echo "[ 1 ] Discharging battery to 15%"
-	BATTERY_HELPER_MODE=1 $battery_binary discharge 15 &>/dev/null
+	BATTERY_HELPER_MODE=1 "$battery_binary" discharge 15
 
 	echo "[ 2 ] Charging to 100%"
-	BATTERY_HELPER_MODE=1 $battery_binary charge 100 &>/dev/null
+	BATTERY_HELPER_MODE=1 "$battery_binary" charge 100
 
 	echo "[ 3 ] Reached 100%, waiting for 1 hour"
-	enable_charging &>/dev/null
+	enable_charging
 	sleep 3600
 
 	echo "[ 4 ] Discharging battery to 80%"
-	BATTERY_HELPER_MODE=1 $battery_binary discharge 80 &>/dev/null
+	BATTERY_HELPER_MODE=1 "$battery_binary" discharge 80
 
-	# Remove pidfile
-	rm -f "$calibrate_pidfile"
-
-	# Recover old maintain status
-	echo "[ 5 ] Restarting battery maintenance"
-	$battery_binary maintain recover &>/dev/null
-
+	echo "[ 5 ] Restoring the protection state captured when calibration started"
 	echo -e "\n✅ Done\n"
 	exit 0
 
@@ -1602,7 +1984,7 @@ if [[ "$action" == "create_daemon" ]]; then
 	fi
 
 	# enable daemon
-	launchctl enable "gui/$(id -u "$USER")/com.battery.app"
+	launchctl_invoke enable "gui/$(id -u "$USER")/com.battery.app"
 	exit 0
 
 fi
@@ -1611,7 +1993,7 @@ fi
 if [[ "$action" == "disable_daemon" ]]; then
 
 	log "Disabling daemon at gui/$(id -u "$USER")/com.battery.app"
-	launchctl disable "gui/$(id -u "$USER")/com.battery.app"
+	launchctl_invoke disable "gui/$(id -u "$USER")/com.battery.app"
 	exit 0
 
 fi

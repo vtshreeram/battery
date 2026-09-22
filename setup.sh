@@ -1,4 +1,5 @@
 #!/bin/bash
+set -euo pipefail
 
 #
 # ‼️ SECURITY NOTES FOR MAINTAINERS:
@@ -31,7 +32,7 @@ echo -e "# Note: this script may ask for your password."
 echo -e "####################################################################\n\n"
 
 # Determine unprivileged user name
-if [[ -n "$1" ]]; then
+if [[ -n "${1:-}" ]]; then
 	calling_user="$1"
 else
 	if [[ -n "$SUDO_USER" ]]; then
@@ -40,8 +41,8 @@ else
 		calling_user="$USER"
 	fi
 fi
-if [[ "$calling_user" == "root" ]]; then
-	echo "❌ Failed to determine unprivileged username"
+if [[ "$calling_user" == "root" || ! "$calling_user" =~ ^[a-zA-Z0-9._-]+$ ]]; then
+	echo "❌ Failed to determine a safe unprivileged username"
 	exit 1
 fi
 
@@ -71,13 +72,32 @@ in_zip_folder_name="battery-$update_branch"
 batteryfolder="$tempfolder/battery"
 rm -rf "$batteryfolder"
 mkdir -p "$batteryfolder"
-curl -sSL -o "$batteryfolder/repo.zip" "https://github.com/vtshreeram/battery/archive/refs/heads/$update_branch.zip"
+download_status=0
+curl -fsSL -o "$batteryfolder/repo.zip" "https://github.com/vtshreeram/battery/archive/refs/heads/$update_branch.zip" || download_status=$?
+if [[ "$download_status" -ne 0 ]]; then
+	echo "❌ Failed to download the battery repository"
+	exit "$download_status"
+fi
 unzip -qq "$batteryfolder/repo.zip" -d "$batteryfolder"
 cp -r "$batteryfolder/$in_zip_folder_name/"* "$batteryfolder"
 rm "$batteryfolder/repo.zip"
+if [[ ! -s "$batteryfolder/battery.sh" || ! -s "$batteryfolder/dist/smc" ]]; then
+	echo "❌ Download is missing battery.sh or dist/smc. Leaving the current installation in place."
+	exit 1
+fi
+if ! head -n 1 "$batteryfolder/battery.sh" | grep -q '^#!/bin/bash'; then
+	echo "❌ Downloaded battery.sh is not a shell script. Leaving the current installation in place."
+	exit 1
+fi
+if ! grep -q '^BATTERY_CLI_VERSION="' "$batteryfolder/battery.sh"; then
+	echo "❌ Downloaded battery.sh has no version. Leaving the current installation in place."
+	exit 1
+fi
 
-echo "[  4 ] Make sure $binfolder is recreated and owned by root"
-sudo rm -rf "$binfolder" # start with an empty $binfolder and ensure there is no symlink or file at the path
+echo "[  4 ] Make sure $binfolder exists and is owned by root"
+if [[ -L "$binfolder" ]]; then
+	sudo rm -f "$binfolder"
+fi
 sudo install -d -m 755 -o root -g wheel "$binfolder"
 
 echo "[  5 ] Install prebuilt smc binary into $binfolder"
@@ -117,7 +137,7 @@ sudo chmod -h 644 "$pidfile"
 echo "[  9 ] Fix ownership and permissions for $(dirname "$launch_agent_plist")"
 sudo chown -h "$calling_user" "$(dirname "$launch_agent_plist")"
 sudo chmod -h 755 "$(dirname "$launch_agent_plist")"
-sudo chown -hf "$calling_user" "$launch_agent_plist" 2>/dev/null
+sudo chown -hf "$calling_user" "$launch_agent_plist" 2>/dev/null || true
 
 echo "[ 10 ] Setup visudo configuration"
 sudo "$binfolder/battery" visudo

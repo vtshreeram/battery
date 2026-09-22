@@ -13,6 +13,7 @@ try {
     electron_app = null
 }
 
+// Maintenance daemon plist. Login startup must not load or unload this agent.
 const LAUNCH_AGENT_PATH = path.join( os.homedir(), 'Library', 'LaunchAgents', 'battery.plist' )
 
 /**
@@ -108,19 +109,6 @@ const set_startup_enabled = async ( enabled ) => {
         }
     } catch ( e ) {
         log( '[Startup] AppleScript login item sync error: ', e?.message )
-    }
-
-    // 3. LaunchAgent background maintenance daemon sync
-    try {
-        if( fs.existsSync( LAUNCH_AGENT_PATH ) ) {
-            if( should_enable ) {
-                await exec_file_async( '/bin/launchctl', [ 'load', '-w', LAUNCH_AGENT_PATH ] ).catch( () => {} )
-            } else {
-                await exec_file_async( '/bin/launchctl', [ 'unload', '-w', LAUNCH_AGENT_PATH ] ).catch( () => {} )
-            }
-        }
-    } catch ( e ) {
-        log( '[Startup] LaunchAgent daemon sync error: ', e?.message )
     }
 
     return should_enable

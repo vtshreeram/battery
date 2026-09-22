@@ -1,12 +1,12 @@
 const {
     get_protection_mode,
-    set_protection_mode,
     get_charge_limit,
-    set_charge_limit,
     get_temporary_workflow,
     set_temporary_workflow
 } = require( './settings' )
 const { enable_battery_limiter, disable_battery_limiter } = require( './battery' )
+const { restore_protection_state } = require( './protection-preferences' )
+const { status_is_actionable } = require( './state-machine' )
 const { send_notification } = require( './notifications' )
 const { record_event } = require( './activity-history' )
 const { log } = require( './helpers' )
@@ -28,15 +28,18 @@ const start_charge_to_full = async () => {
             started_at: Date.now()
         }
 
-        set_temporary_workflow( workflow )
         record_event( {
             type: 'workflow_start',
             title: 'Charge to 100% Once Started',
             detail: `Will charge to 100% and then restore ${ previous_limit }% limit (${ previous_mode }).`
         } )
 
-        // Enable temporary 100% limit
-        await enable_battery_limiter( 100 )
+        const applied = await enable_battery_limiter( 100 )
+        if( applied === null ) {
+            log( '[TemporaryCharge] Charge to 100% did not apply; leaving the previous protection state' )
+            return false
+        }
+        set_temporary_workflow( workflow )
         return true
     } catch ( err ) {
         log( `[TemporaryCharge] Error starting charge to 100%: `, err )
@@ -76,14 +79,18 @@ const start_pause_protection = async ( duration ) => {
             started_at: now
         }
 
-        set_temporary_workflow( workflow )
         record_event( {
             type: 'workflow_start',
             title: `Charge limit paused (${ duration })`,
             detail: `Charge limit paused. Will restore ${ previous_limit }% limit (${ previous_mode }).`
         } )
 
-        await disable_battery_limiter()
+        const stopped = await disable_battery_limiter()
+        if( stopped === null ) {
+            log( '[TemporaryCharge] Pause did not stop maintenance; leaving the previous protection state' )
+            return false
+        }
+        set_temporary_workflow( workflow )
         return true
     } catch ( err ) {
         log( `[TemporaryCharge] Error pausing protection: `, err )
@@ -100,22 +107,16 @@ const cancel_temporary_workflow = async () => {
         if( !workflow ) return false
 
         log( `[TemporaryCharge] Cancelling workflow: ${ workflow.type }` )
-        set_temporary_workflow( null )
 
         const { restore_mode, restore_limit } = workflow
+        const restored = await restore_protection_state( restore_mode, restore_limit )
+        if( !restored ) return false
+        set_temporary_workflow( null )
         record_event( {
             type: 'workflow_cancel',
             title: 'Temporary Workflow Cancelled',
             detail: `Restoring ${ restore_limit }% limit (${ restore_mode }).`
         } )
-
-        if( restore_mode === 'enabled' ) {
-            await enable_battery_limiter( restore_limit )
-        } else {
-            set_charge_limit( restore_limit )
-            set_protection_mode( 'disabled' )
-            await disable_battery_limiter()
-        }
 
         return true
     } catch ( err ) {
@@ -135,12 +136,19 @@ const evaluate_temporary_workflow = async ( status, on_battery ) => {
         const workflow = get_temporary_workflow()
         if( !workflow ) return
 
+        if( !status_is_actionable( status ) ) {
+            log( '[TemporaryCharge] Deferring workflow decision until a fresh battery reading is available' )
+            return
+        }
+
         const now = Date.now()
 
         // 1. Check Full Charge completion
         if( workflow.type === 'full_charge' ) {
             if( status && status.percentage >= 100 ) {
                 log( `[TemporaryCharge] Full charge reached (100%). Restoring prior configuration.` )
+                const restored = await restore_protection_state( workflow.restore_mode, workflow.restore_limit )
+                if( !restored ) return
                 set_temporary_workflow( null )
 
                 send_notification( {
@@ -154,14 +162,6 @@ const evaluate_temporary_workflow = async ( status, on_battery ) => {
                     title: 'Charge to 100% Completed',
                     detail: `Restored ${ workflow.restore_limit }% limit (${ workflow.restore_mode }).`
                 } )
-
-                if( workflow.restore_mode === 'enabled' ) {
-                    await enable_battery_limiter( workflow.restore_limit )
-                } else {
-                    set_charge_limit( workflow.restore_limit )
-                    set_protection_mode( 'disabled' )
-                    await disable_battery_limiter()
-                }
             }
         }
 
@@ -172,6 +172,8 @@ const evaluate_temporary_workflow = async ( status, on_battery ) => {
 
             if( expired || unplugged ) {
                 log( `[TemporaryCharge] Pause ended (expired: ${ expired }, unplugged: ${ unplugged }). Restoring.` )
+                const restored = await restore_protection_state( workflow.restore_mode, workflow.restore_limit )
+                if( !restored ) return
                 set_temporary_workflow( null )
 
                 send_notification( {
@@ -185,14 +187,6 @@ const evaluate_temporary_workflow = async ( status, on_battery ) => {
                     title: 'Charge limit pause ended',
                     detail: `Restored ${ workflow.restore_limit }% limit (${ workflow.restore_mode }).`
                 } )
-
-                if( workflow.restore_mode === 'enabled' ) {
-                    await enable_battery_limiter( workflow.restore_limit )
-                } else {
-                    set_charge_limit( workflow.restore_limit )
-                    set_protection_mode( 'disabled' )
-                    await disable_battery_limiter()
-                }
             }
         }
     } catch ( err ) {

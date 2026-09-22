@@ -3,13 +3,11 @@ const assert = require( 'node:assert/strict' )
 const { schedule_travel_mode, cancel_travel_mode } = require( '../modules/scheduler' )
 const { get_travel_mode, reset_settings_to_defaults } = require( '../modules/settings' )
 const { set_mock_handler } = require( '../modules/process-runner' )
+const { install_battery_mock } = require( './mock-battery' )
 
 test.beforeEach( () => {
     reset_settings_to_defaults()
-    set_mock_handler( () => ( {
-        stdout: '80,6:00,enabled,idle,80\n',
-        stderr: ''
-    } ) )
+    install_battery_mock()
 } )
 
 test.afterEach( () => {

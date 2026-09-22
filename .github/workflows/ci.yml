@@ -27,6 +27,9 @@ jobs:
       - name: Run ShellCheck on shell scripts
         run: shellcheck battery.sh setup.sh update.sh
 
+      - name: CLI logic tests
+        run: bash test/cli/firmware-limit.test.sh
+
       - name: Install App Dependencies
         working-directory: ./app
         run: npm ci
@@ -64,6 +67,9 @@ jobs:
         working-directory: ./app
         run: npm test
 
+      - name: CLI logic tests
+        run: bash test/cli/firmware-limit.test.sh
+
       - name: CLI Smoke Test (Non-destructive)
         run: |
           chmod +x ./battery.sh
@@ -91,6 +97,7 @@ jobs:
 
       - name: Build Electron App
         working-directory: ./app
+        # The build script passes --publish never. build:release is the publishing path.
         run: npm run build
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: false

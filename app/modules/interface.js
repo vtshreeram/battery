@@ -16,15 +16,14 @@ const { get_status_icon, round_battery_level } = require( './theme' )
 const {
     get_icon_style_setting,
     get_charge_limit,
-    set_charge_limit,
     get_protection_mode,
-    set_protection_mode,
     get_temporary_workflow,
     get_travel_mode,
     get_power_source_preference,
     set_power_source_preference
 } = require( './settings' )
-const { resolve_battery_state, pick_status_for_display } = require( './state-machine' )
+const { resolve_battery_state, pick_status_for_display, status_is_actionable } = require( './state-machine' )
+const { apply_charge_limit } = require( './protection-preferences' )
 const { evaluate_power_notifications } = require( './notifications' )
 const {
     start_charge_to_full,
@@ -78,10 +77,7 @@ const LIMIT_PRESETS = [ 70, 80, 90, 100 ]
 async function handle_set_limit( limit ) {
     try {
         log( `[Interface] Changing limit to ${ limit }%` )
-        set_charge_limit( limit )
-        if( get_protection_mode() === 'enabled' ) {
-            await enable_battery_limiter( limit )
-        }
+        await apply_charge_limit( limit )
         await refresh_tray()
     } catch ( e ) {
         log( `[Interface] Error setting limit: `, e )
@@ -91,7 +87,6 @@ async function handle_set_limit( limit ) {
 async function enable_limiter() {
     try {
         log( '[Interface] Enable limiter clicked' )
-        set_protection_mode( 'enabled' )
         const target = get_charge_limit()
         await enable_battery_limiter( target )
         await refresh_tray()
@@ -103,7 +98,6 @@ async function enable_limiter() {
 async function disable_limiter() {
     try {
         log( '[Interface] Disable limiter clicked' )
-        set_protection_mode( 'disabled' )
         await disable_battery_limiter()
         await refresh_tray()
     } catch ( e ) {
@@ -155,9 +149,13 @@ const generate_app_menu = async () => {
         const ac_attached = await is_ac_attached()
         const on_battery = ac_attached === false || powerMonitor.onBatteryPower
 
-        // Evaluate active temporary workflows (charge to full / pause) and scheduler
-        await evaluate_temporary_workflow( status, on_battery )
-        await evaluate_scheduler( status )
+        // Stale tray readings stay on screen. Workflows wait for a fresh poll.
+        if( status_is_actionable( fresh_status ) ) {
+            await evaluate_temporary_workflow( fresh_status, on_battery )
+            await evaluate_scheduler( fresh_status )
+        } else {
+            log( '[Interface] Deferring charge workflows until a fresh battery reading is available' )
+        }
         const temporary_workflow = get_temporary_workflow()
         const calibrating = is_calibration_running()
 
@@ -222,7 +220,7 @@ const generate_app_menu = async () => {
         const startup_enabled = await is_startup_enabled()
         const health = await get_battery_health()
         const power_pref = get_power_source_preference()
-        const is_manual_battery = (!ac_attached) || (power_pref === 'battery') || (Boolean(status.discharging) && !limiter_on)
+        const is_manual_battery = !ac_attached || power_pref === 'battery' || Boolean( status.discharging ) && !limiter_on
 
         // Extract raw temperature if available
         let temp_c = null

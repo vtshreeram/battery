@@ -114,7 +114,9 @@ const resolve_battery_state = ( {
     if( force_discharge || inferred_force_discharge ) {
         return {
             state: ProtectionState.FORCE_DISCHARGING,
-            label: `Discharging to ${ status.maintain_percentage || 80 }%`,
+            label: status.maintain_percentage
+                ? `Discharging to ${ status.maintain_percentage }%`
+                : 'Discharging',
             iconState: 'battery'
         }
     }
@@ -128,9 +130,41 @@ const resolve_battery_state = ( {
         }
     }
 
-    // 8. Protection active: compare current charge with maintain target
-    const target = Number( status.maintain_percentage || 80 )
+    // 8. Protection active: compare current charge with the observed maintain target.
+    // A range reports its upper bound as maintain_percentage and keeps both ends.
+    const upper = Number( status.upperLimit ?? status.maintain_percentage )
+    const lower = Number( status.lowerLimit ?? upper )
     const current = Number( status.percentage )
+    const target = Number.isFinite( upper ) ? upper : null
+    if( target === null || !Number.isFinite( current ) ) {
+        return {
+            state: ProtectionState.MONITORING,
+            label: 'Protection on',
+            iconState: 'protected'
+        }
+    }
+
+    if( status.maintainMode === 'range' && Number.isFinite( lower ) && lower < target ) {
+        if( current >= target ) {
+            return {
+                state: ProtectionState.BYPASS,
+                label: `Holding between ${ lower }% and ${ target }% (using adapter)`,
+                iconState: 'protected'
+            }
+        }
+        if( current < lower ) {
+            return {
+                state: ProtectionState.CHARGING,
+                label: `Charging to ${ target }% (${ current }%)`,
+                iconState: 'charging'
+            }
+        }
+        return {
+            state: ProtectionState.MONITORING,
+            label: `Holding between ${ lower }% and ${ target }%`,
+            iconState: 'protected'
+        }
+    }
 
     if( current >= target ) {
         return {
@@ -156,8 +190,18 @@ const resolve_battery_state = ( {
 }
 
 /**
+ * Hardware-control decisions require a fresh reading.
+ * A last-good tray value is display-only and must not complete workflows.
+ */
+function status_is_actionable( status ) {
+    if( !status || status.stale === true || status.available === false ) return false
+    return typeof status.percentage === 'number' && !Number.isNaN( status.percentage )
+}
+
+/**
  * Keep the last good hardware reading when a poll fails.
  * Prevents the tray from flashing "status unavailable" during a blip.
+ * The returned reading is for display. Callers must not use it to change charging.
  */
 const pick_status_for_display = ( fresh, last_good ) => {
     if( fresh && fresh.available ) {
@@ -172,5 +216,6 @@ const pick_status_for_display = ( fresh, last_good ) => {
 module.exports = {
     ProtectionState,
     resolve_battery_state,
-    pick_status_for_display
+    pick_status_for_display,
+    status_is_actionable
 }

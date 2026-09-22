@@ -2,12 +2,19 @@ const { app, BrowserWindow, ipcMain } = require( 'electron' )
 const path = require( 'node:path' )
 const {
     get_all_settings,
-    set_protection_mode,
-    set_charge_limit,
-    toggle_force_discharge,
+    get_force_discharge_setting,
     set_master_notifications,
     set_icon_style_setting
 } = require( './settings' )
+const { apply_charge_limit, apply_force_discharge } = require( './protection-preferences' )
+const {
+    require_boolean,
+    require_protection_mode,
+    require_charge_limit,
+    require_future_timestamp,
+    require_display_style,
+    require_pause_duration
+} = require( './ipc-validators' )
 const {
     get_battery_status,
     get_battery_health,
@@ -45,12 +52,18 @@ const open_settings_window = () => {
         title: 'Battery King Settings',
         titleBarStyle: 'hiddenInset',
         webPreferences: {
-            nodeIntegration: true,
-            contextIsolation: false
+            nodeIntegration: false,
+            contextIsolation: true,
+            sandbox: false,
+            preload: path.join( __dirname, '..', 'preload', 'settings-preload.js' )
         }
     } )
 
     const view_path = path.join( __dirname, '..', 'views', 'settings.html' )
+    settings_window.webContents.setWindowOpenHandler( () => ( { action: 'deny' } ) )
+    settings_window.webContents.on( 'will-navigate', ( event, url ) => {
+        if( !String( url ).startsWith( 'file:' ) ) event.preventDefault()
+    } )
     settings_window.loadFile( view_path )
 
     settings_window.on( 'closed', () => {
@@ -107,45 +120,55 @@ const init_settings_ipc = ( on_change_callback ) => {
     } )
 
     ipcMain.handle( 'settings:set_protection', async ( _, mode ) => {
-        log( `[SettingsWindow] IPC set_protection: ${ mode }` )
-        set_protection_mode( mode )
-        if( mode === 'enabled' ) {
-            await enable_battery_limiter()
+        const valid = require_protection_mode( mode )
+        log( `[SettingsWindow] IPC set_protection: ${ valid }` )
+        if( valid === 'enabled' ) {
+            const applied = await enable_battery_limiter()
+            if( applied === null ) {
+                throw new Error( 'Could not enable battery protection' )
+            }
         } else {
-            await disable_battery_limiter()
+            const stopped = await disable_battery_limiter()
+            if( stopped === null ) {
+                throw new Error( 'Could not disable battery protection' )
+            }
         }
         if( on_change_callback ) on_change_callback()
-        return mode
+        return valid
     } )
 
     ipcMain.handle( 'settings:set_limit', async ( _, limit ) => {
-        log( `[SettingsWindow] IPC set_limit: ${ limit }` )
-        set_charge_limit( limit )
-        await enable_battery_limiter( limit )
+        const valid = require_charge_limit( limit )
+        log( `[SettingsWindow] IPC set_limit: ${ valid }` )
+        const result = await apply_charge_limit( valid )
+        if( !result.ok ) {
+            throw new Error( 'Could not apply the charge limit' )
+        }
         if( on_change_callback ) on_change_callback()
-        return limit
+        return result
     } )
 
     ipcMain.handle( 'settings:toggle_discharge', async () => {
-        const val = toggle_force_discharge()
-        await enable_battery_limiter()
+        const next = !get_force_discharge_setting()
+        const result = await apply_force_discharge( next )
         if( on_change_callback ) on_change_callback()
-        return val
+        return result.enabled
     } )
 
     ipcMain.handle( 'settings:set_master_notif', ( _, enabled ) => {
-        return set_master_notifications( enabled )
+        return set_master_notifications( require_boolean( enabled, 'Notifications' ) )
     } )
 
     ipcMain.handle( 'settings:set_icon_style', ( _, style ) => {
-        const val = set_icon_style_setting( style )
+        const val = set_icon_style_setting( require_display_style( style ) )
         if( on_change_callback ) on_change_callback()
         return val
     } )
 
     ipcMain.handle( 'settings:set_startup', async ( _, enabled ) => {
-        log( `[SettingsWindow] IPC set_startup: ${ enabled }` )
-        const val = await set_startup_enabled( enabled )
+        const valid = require_boolean( enabled, 'Launch at startup' )
+        log( `[SettingsWindow] IPC set_startup: ${ valid }` )
+        const val = await set_startup_enabled( valid )
         if( on_change_callback ) on_change_callback()
         return val
     } )
@@ -164,7 +187,7 @@ const init_settings_ipc = ( on_change_callback ) => {
     } )
 
     ipcMain.handle( 'settings:pause', async ( _, duration ) => {
-        const res = await start_pause_protection( duration )
+        const res = await start_pause_protection( require_pause_duration( duration ) )
         if( on_change_callback ) on_change_callback()
         return res
     } )
@@ -188,7 +211,10 @@ const init_settings_ipc = ( on_change_callback ) => {
     } )
 
     ipcMain.handle( 'settings:schedule_travel', async ( _, target_time_ms, target_percentage ) => {
-        const plan = await schedule_travel_mode( { target_time_ms, target_percentage } )
+        const plan = await schedule_travel_mode( {
+            target_time_ms: require_future_timestamp( target_time_ms ),
+            target_percentage: require_charge_limit( target_percentage ?? 100 )
+        } )
         if( on_change_callback ) on_change_callback()
         return plan
     } )

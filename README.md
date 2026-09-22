@@ -5,7 +5,7 @@
 [![macOS](https://img.shields.io/badge/platform-macOS%2012%2B%20(Apple%20Silicon)-black?style=flat&logo=apple)](https://github.com/vtshreeram/battery)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Zero Telemetry](https://img.shields.io/badge/telemetry-zero%20(100%25%20private)-brightgreen.svg)](README.md)
-[![Build Status](https://img.shields.io/badge/build-passing-success.svg)](https://github.com/vtshreeram/battery/actions)
+[![CI](https://github.com/vtshreeram/battery/actions/workflows/ci.yml/badge.svg)](https://github.com/vtshreeram/battery/actions/workflows/ci.yml)
 
 **Battery King** is a high-performance power management suite engineered specifically for Apple Silicon (M1, M2, M3, M4) MacBooks. It limits charging to 80% (or any custom limit between 50% and 100%), keeping your battery cool and substantially extending lithium-ion cell lifespan when connected to power.
 
@@ -83,7 +83,7 @@ The installer will:
 5. Install and launch the **Battery King** application in `/Applications`.
 
 ### Option 2: Precompiled DMG Release
-Download the latest `battery-1.4.0-mac-arm64.dmg` from the [Releases page](https://github.com/vtshreeram/battery/releases), open it, and drag **Battery King** to `/Applications`.
+Download the latest `Battery King-1.4.2-mac-arm64.dmg` from the [Releases page](https://github.com/vtshreeram/battery/releases), open it, and drag **Battery King** to `/Applications`.
 
 ---
 
@@ -137,8 +137,8 @@ npm run build
 ```
 
 The compiled release packages are generated in [`app/dist/`](file:///Users/vtshreeram/Github/battery/app/dist/):
-* `dist/Battery King-1.4.0-mac-arm64.dmg`
-* `dist/Battery King-1.4.0-mac-arm64.zip`
+* `dist/Battery King-1.4.2-mac-arm64.dmg`
+* `dist/Battery King-1.4.2-mac-arm64.zip`
 * `dist/mac-arm64/Battery King.app`
 
 ---
